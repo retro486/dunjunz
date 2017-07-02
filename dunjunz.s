@@ -277,6 +277,7 @@ tmp1		rmb 2
 
 playing		rmb 1		; bits 0-3 = player 1-4 active
 finished	rmb 1		; bits 0-3 = player 1-4 finished level
+dying		rmb 1		; bits 0-3 = player 1-4 dying or dead
 dead		rmb 1		; bits 0-3 = player 1-4 dead
 exiting		rmb 1		; non-zero = a player is using exit
 
@@ -736,6 +737,9 @@ mainloop
 		cmpa #$0f
 		bne mainloop
 
+		dec finish_delay
+		bne mainloop
+
 		lda dead
 		cmpa playing
 		bne finished_level
@@ -849,7 +853,7 @@ end_animation
 46
 
 		jsr animate
-		jsr eanim_step
+		bsr eanim_step
 
 		jsr psg_play2frags
 mod_edelay	equ *+1
@@ -944,9 +948,9 @@ jtbl_eanim_state
 		fdb spr_delay
 		fdb spr_delay
 		fdb eanim_cont
-		fdb spr_set_state
-		fdb spr_set_state
-		fdb spr_set_state
+		fdb spr_nop
+		fdb spr_nop
+		fdb spr_nop
 		CODE
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1310,17 +1314,18 @@ start_game
 		ldd #$024c	; 2, inca
 		sta mod_skill_door
 		stb mod_skill_key
-		ldd #$0400
+		ldd #$0492	; 4, 100-8(BCD)
 		sta mod_monster_hp
-		ldd #$0e90	; 14, 100-10
+		stb mod_mon_hit_player
+		ldd #$0e90	; 14, 100-10(BCD)
 		bra 6F
 		; hard mode
 5		ldd #$0012	; 0, nop
 		sta mod_skill_door
 		stb mod_skill_key
-		ldd #$0800
+		ldd #$0890	; 8, 100-10(BCD)
 		sta mod_monster_hp
-		ldd #$1480	; 20, 100-20
+		ldd #$1480	; 20, 100-20(BCD)
 6		sta mod_drainer_hp
 		stb mod_drainer_dmg
 
@@ -1372,6 +1377,9 @@ level_setup
 		eora #$0f
 		sta finished
 		clr exiting
+
+		lda #30
+		sta finish_delay
 
 		; Clear monsters
 		ldx #monsters
@@ -1704,6 +1712,7 @@ setup_players
 		clrb
 
 		sta dead		; clear remaining bits
+		sta dying		; and dying flags
 		ldx #death_fifo		; initialise death fifo
 		stx death_fifo_end
 
@@ -1861,7 +1870,7 @@ mod_joystk_p4	equ *
 		beq 30F
 		bsr joy_yaxis
 		bcc 20F
-		jsr spr_move_control
+		bsr spr_move_control
 		beq 50F
 20		bsr joy_xaxis
 		bra 50F
@@ -2255,13 +2264,18 @@ mon_check_direction
 		beq 40F
 		bsr spr_set_tile
 		lda #state_mon_new_room
-		jmp spr_set_state
+		sta spr_state,u
+		rts
 40		bsr spr_set_tile
-		bra spr_inc_state
+		jmp spr_inc_state
 		; monster hit player
-45		lda #1
+45		lda plr_bit,u
+		bita dying
+		bne 50F
+		lda #1
 		ldx #snd_hit
 		jsr psg_play_snd
+mod_mon_hit_player	equ *+1
 		lda #$90		; decrement hp by 10-armour
 		adda plr_armour,u
 		jsr plr_damage
@@ -2377,7 +2391,8 @@ tbl_obj_woff2	fcb -3*fb_w	; up, x&1=0
 
 spr_inc_state	lda spr_state,u
 spr_delay	adda #2
-spr_set_state	sta spr_state,u
+		sta spr_state,u
+spr_nop
 99		rts
 
 spr_move2
@@ -2468,7 +2483,7 @@ spr_undraw
 		ldx spr_owoff,u		; original (centred) woff
 spr_undraw_v
 		stx tmp1		; preserve woff
-		bsr obj_test_pickup
+		jsr obj_test_pickup
 		beq 30F
 		ldy #pickups
 		ldx obj_y,u
@@ -2521,9 +2536,14 @@ mod_draw_chalice_1
 		lda plr_bit,u
 		bita playing
 		beq plr_set_inactive
-		lda #state_plr_landed
-		sta spr_state,u
-		rts
+		ldb #state_plr_landed
+		stb spr_state,u
+		bsr plr_update_pos
+		lda plr_bit,u
+		bita dying
+		beq 99F
+		jmp plr_kill
+99		rts
 
 ; Still need to update yroom for inactive players, as their windows get
 ; updated anyway.  However, player setup invalidates their (y,x) and the
@@ -2536,6 +2556,17 @@ plr_set_inactive
 		lda spr_next_y,u
 		anda #$f8
 		sta plr_yroom,u
+		rts
+
+plr_update_pos	ldd spr_next_y,u
+		std obj_y,u
+		anda #$f8
+		sta plr_yroom,u
+		ldd obj_y,u
+		stb spr_cx,u
+		jsr yx_to_woff
+		stx obj_woff,u
+		stx spr_owoff,u
 		rts
 
 		; - - - - - - - - - - - - - - - - - - - - - - -
@@ -2561,15 +2592,7 @@ obj_test_pickup_d
 plr_landed
 		jsr spr_undraw
 plr_landed_nu
-		ldd spr_next_y,u
-		std obj_y,u
-		anda #$f8
-		sta plr_yroom,u
-		ldd obj_y,u
-		stb spr_cx,u
-		jsr yx_to_woff
-		stx obj_woff,u
-		stx spr_owoff,u
+		bsr plr_update_pos
 		clr spr_state,u
 		bsr obj_test_pickup_d
 		beq 99F
@@ -2611,7 +2634,7 @@ plr_centred
 		anda #$7f
 		sta spr_facing,u
 		jsr spr_set_tile	; yes, again
-		lda dead
+		lda dying
 		sta tmp0
 		jsr spr_move
 		beq 10F
@@ -2651,7 +2674,8 @@ mod_check_chalice
 		beq 50F
 		dec plr_yroom,u	; invalidate yroom
 		lda #state_plr_draw_room
-		jmp spr_set_state
+		sta spr_state,u
+		rts
 50		jsr obj_draw
 		ldb #state_plr_move1
 		lda plr_speed,u
@@ -2854,18 +2878,23 @@ plr_dying
 		sta spr_state,u
 		lda obj_tile,u
 		cmpa #bones7
-		bhs 10F
-		inca
-		bra 20F
-10		ldb spr_hp,u
-		beq 20F
+		blo 10F
+		ldb plr_bit,u
+		bitb dying
+		bne 5F
 		ldb #state_plr_undying
 		stb spr_state,u
+		bra 20F
+5		orb dead
+		stb dead
+		fcb $21		; brn - skip inca
+10		inca
 20		sta obj_tile,u
 		ldx spr_owoff,u
 		; don't use cx - player should die centred
 		ldb obj_x,u
 		jmp obj_draw_vx
+
 plr_undying
 		lda #state_plr_undying_delay
 		sta spr_state,u
@@ -2876,10 +2905,8 @@ plr_undying
 		bra 20B
 10 		lda #state_plr_landed
 		sta spr_state,u
-		lda plr_bit,u
-		coma
-		anda dead
-		sta dead
+		lda #$32
+		sta spr_hp,u
 		jmp plr_draw_hp
 
 ; It's ok to destroy A here, as B will still test false in plr_centred,
@@ -2921,9 +2948,9 @@ jtbl_player_state
 		fdb plr_draw_room
 		STATE_ID "state_plr_draw_objects"
 		fdb plr_draw_objects
+		; keep these as the last states
 		STATE_ID "state_plr_inactive"
 		fdb plr_inactive
-		; keep these as the last states
 		STATE_ID "state_plr_exit0"
 		fdb plr_exit0
 		STATE_ID "state_plr_exitdelay"
@@ -2954,19 +2981,24 @@ plr_damage	adda spr_hp,u
 
 plr_kill
 		lda spr_state,u
-		cmpa #state_plr_exit0
-		blo 10F
-		rts
-10		ldx death_fifo_end
+		cmpa #state_plr_inactive
+		bhs 99F
+		lda dying
+		ora plr_bit,u
+		sta dying
+		lda spr_state,u
+		cmpa #state_plr_draw_room
+		blo 20F
+		cmpa #state_plr_draw_objects
+		bhi 20F
+99		rts
+20		ldx death_fifo_end
 		stu ,x++
 		stx death_fifo_end
 		jsr kill_speed
 		lda #state_plr_die
 		sta spr_state,u
-		lda dead
-		ora plr_bit,u
-		sta dead
-		ldd obj_y,u
+30		ldd obj_y,u
 		; fall through to drop_key
 
 ; Drop key held by player in specified location.  Checks player has a key
@@ -3211,7 +3243,7 @@ pickup_money
 
 pickup_cross
 		bsr sound_low
-		lda dead
+		lda dying
 		beq 10F
 		ldx death_fifo_end
 		leax -2,x
@@ -3223,12 +3255,14 @@ pickup_cross
 		std death_fifo+2
 		ldd death_fifo+6
 		std death_fifo+4
-		lda #$32
-		sta spr_hp,x
+		; unset dying and dead
 		lda plr_bit,x
 		coma
-		anda dead
-		sta dead
+		tfr a,b
+		anda dying
+		sta dying
+		andb dead
+		stb dead
 10		rts
 
 pickup_speed
@@ -3769,6 +3803,7 @@ textfont_b	rzb textfont_a_end-textfont_a
 
 		BSS
 death_fifo	rmb 8
+finish_delay	rmb 1
 
 monsters	equ *+mon_offset_
 		rmb max_monsters*sizeof_mon
