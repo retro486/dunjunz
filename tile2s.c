@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +23,8 @@ static void helptext(void) {
 "  -y PIXELS    offset to top edge [0]\n"
 "  -w PIXELS    width [from image]\n"
 "  -h PIXELS    height [from image]\n"
+"  -X           flip horizontally\n"
+"  -Y           flip vertically\n"
 "  -s SHIFT     initial right shift in pixels (0-7) [0]\n"
 "  -i OFFSET    initial indexed offset [0]\n"
 "  -p           preserve original value of index register\n"
@@ -41,7 +44,7 @@ static struct option long_options[] = {
 
 static int fb_w = 32;
 static int h = 0;   // height of sprite
-static char *ireg = "x";   // usually 'x', best assume that for now due to abx use
+static char ireg = 'x';   // usually 'x', best assume that for now due to abx use
 static int ioff;    // current index pointer offset
 static int nbytes;  // total number of bytes
 static int wbytes;  // bytes per line
@@ -60,32 +63,55 @@ static _Bool prefer_speed = 0;
 
 // in *_idx(), 'i' argument is index from zero into bitmap
 
-static void lda_imm(int d) {
-	if (reg_a == d)
-		return;
+static int ld8_imm(int d, int r, char a) {
+	if (r == d)
+		return d;
 	if (d == 0) {
 		cycles += (cyc = 2);
-		printf("\tclra\t; %d\n", cyc);
-		reg_a = 0;
-		return;
+		printf("\tclr%c\t; %d\n", a, cyc);
+		return 0;
+	}
+	if (r >= 0 && d == (r + 1) & 0xff) {
+		cycles += (cyc = 2);
+		printf("\tinc%c\t; %d\n", a, cyc);
+		return d;
+	}
+	if (r >= 0 && d == (r + 0xff) & 0xff) {
+		cycles += (cyc = 2);
+		printf("\tdec%c\t; %d\n", a, cyc);
+		return d;
+	}
+	if (r >= 0 && d == (r ^ 0xff)) {
+		cycles += (cyc = 2);
+		printf("\tcom%c\t; %d\n", a, cyc);
+		return d;
+	}
+	if (r >= 0 && d == ((r ^ 0xff) + 1) & 0xff) {
+		cycles += (cyc = 2);
+		printf("\tneg%c\t; %d\n", a, cyc);
+		return d;
+	}
+	if (r >= 0 && d == (r >> 1)) {
+		cycles += (cyc = 2);
+		printf("\tlsr%c\t; %d\n", a, cyc);
+		return d;
+	}
+	if (r >= 0 && d == (r << 1) & 0xff) {
+		cycles += (cyc = 2);
+		printf("\tlsl%c\t; %d\n", a, cyc);
+		return d;
 	}
 	cycles += (cyc = 2);
-	printf("\tlda\t#$%02x\t; %d\n", d, cyc);
-	reg_a = d;
+	printf("\tld%c\t#$%02x\t; %d\n", a, d, cyc);
+	return d;
+}
+
+static void lda_imm(int d) {
+	reg_a = ld8_imm(d, reg_a, 'a');
 }
 
 static void ldb_imm(int d) {
-	if (reg_b == d)
-		return;
-	if (d == 0) {
-		cycles += (cyc = 2);
-		printf("\tclrb\t; %d\n", cyc);
-		reg_b = 0;
-		return;
-	}
-	cycles += (cyc = 2);
-	printf("\tldb\t#$%02x\t; %d\n", d, cyc);
-	reg_b = d;
+	reg_b = ld8_imm(d, reg_b, 'b');
 }
 
 static void ldd_imm(int d0, int d1) {
@@ -177,7 +203,7 @@ static void lda_idx(int m, int d, int i) {
 		return;
 	}
 	cycles += (cyc = cyc_indexed(4, i-ioff));
-	printf("\tlda\t%d,%s\t; %d\n", i-ioff, ireg, cyc);
+	printf("\tlda\t%d,%c\t; %d\n", i-ioff, ireg, cyc);
 	reg_a = -1;
 }
 
@@ -187,7 +213,7 @@ static void ldb_idx(int m, int d, int i) {
 		return;
 	}
 	cycles += (cyc = cyc_indexed(4, i-ioff));
-	printf("\tldb\t%d,%s\t; %d\n", i-ioff, ireg, cyc);
+	printf("\tldb\t%d,%c\t; %d\n", i-ioff, ireg, cyc);
 	reg_b = -1;
 }
 
@@ -206,7 +232,7 @@ static void ldd_idx(int m0, int d0, int i0, int m1, int d1, int i1) {
 			ldb_idx(m1, d1, i1);
 		} else {
 			cycles += (cyc = cyc_indexed(5, i0-ioff));
-			printf("\tldd\t%d,%s\t; %d\n", i0-ioff, ireg, cyc);
+			printf("\tldd\t%d,%c\t; %d\n", i0-ioff, ireg, cyc);
 			reg_a = reg_b = -1;
 		}
 	}
@@ -216,12 +242,12 @@ static void ldd_idx(int m0, int d0, int i0, int m1, int d1, int i1) {
 
 static void sta_idx(int i) {
 	cycles += (cyc = cyc_indexed(4, i-ioff));
-	printf("\tsta\t%d,%s\t; %d\n", i-ioff, ireg, cyc);
+	printf("\tsta\t%d,%c\t; %d\n", i-ioff, ireg, cyc);
 }
 
 static void stb_idx(int i) {
 	cycles += (cyc = cyc_indexed(4, i-ioff));
-	printf("\tstb\t%d,%s\t; %d\n", i-ioff, ireg, cyc);
+	printf("\tstb\t%d,%c\t; %d\n", i-ioff, ireg, cyc);
 }
 
 static void std_idx(int i0, int i1) {
@@ -232,7 +258,7 @@ static void std_idx(int i0, int i1) {
 		return;
 	}
 	cycles += (cyc = cyc_indexed(5, i0-ioff));
-	printf("\tstd\t%d,%s\t; %d\n", i0-ioff, ireg, cyc);
+	printf("\tstd\t%d,%c\t; %d\n", i0-ioff, ireg, cyc);
 }
 
 static int peek_next_byte(uint8_t *m, uint8_t *d, int *i, int *b) {
@@ -260,6 +286,7 @@ static int next_byte(uint8_t *m, uint8_t *d, int *i, int *b) {
 	return 1;
 }
 
+/*
 static int find_duplicate(int v, int *i, int *b) {
 	if (v < 0)
 		return 0;
@@ -274,6 +301,7 @@ static int find_duplicate(int v, int *i, int *b) {
 	}
 	return 0;
 }
+*/
 
 static int is_optimisable(int m0, int d0, int i0, int m1, int d1, int i1) {
 	// std possible if contiguous
@@ -314,7 +342,7 @@ static void compile_sprite(void) {
 					add = last_linebase - ioff;
 				}
 				cycles += (cyc = cyc_indexed(4, add));
-				printf("\tlea%s\t%d,%s\t; %d\n", ireg, add, ireg, cyc);
+				printf("\tlea%c\t%d,%c\t; %d\n", ireg, add, ireg, cyc);
 				ioff += add;
 			}
 		}
@@ -383,7 +411,6 @@ int main(int argc, char **argv) {
 	ioff = 0;
 	boff = 0;
 	fb_w = 32;
-	ireg = "x";
 	int xoff = 0, yoff = 0;
 	int origin = 0;
 	int w = 0;
@@ -392,9 +419,11 @@ int main(int argc, char **argv) {
 	_Bool advance = 0;
 	_Bool bitmap_only = 0;
 	_Bool resolution = 0;
+	_Bool flip_horizontal = 0;
+	_Bool flip_vertical = 0;
 
 	int c;
-	while ((c = getopt_long(argc, argv, "W:x:y:w:h:s:i:pabro:?",
+	while ((c = getopt_long(argc, argv, "W:x:y:w:h:XYs:i:pabro:?",
 				long_options, NULL)) != -1) {
 		switch (c) {
 		case 0:
@@ -413,6 +442,12 @@ int main(int argc, char **argv) {
 			break;
 		case 'h':
 			h = strtol(optarg, NULL, 0);
+			break;
+		case 'X':
+			flip_horizontal = 1;
+			break;
+		case 'Y':
+			flip_vertical = 1;
 			break;
 		case 's':
 			shift = strtol(optarg, NULL, 0);
@@ -490,7 +525,9 @@ int main(int argc, char **argv) {
 		for (int x = 0; x < w; x++) {
 			m <<= 1;
 			d <<= 1;
-			int c = getpixel(in, x + xoff, y + yoff);
+			int getx = flip_horizontal ? (xoff + w - x - 1) : (xoff + x);
+			int gety = flip_vertical ? (yoff + h - y - 1) : (yoff + y);
+			int c = getpixel(in, getx, gety);
 			if (resolution && c == 5) {
 				c = 3;
 			} else if (c == 7) {
@@ -543,7 +580,6 @@ int main(int argc, char **argv) {
 
 	reg_a = -1;
 	reg_b = -1;
-	int total_ioff = 0;
 
 	cycles = 0;
 
@@ -552,7 +588,7 @@ int main(int argc, char **argv) {
 	if (preserve) {
 		int add = origin - ioff;
 		cycles += (cyc = cyc_indexed(4, add));
-		printf("\tlea%s\t%d,%s\t; %d\n", ireg, add, ireg, cyc);
+		printf("\tlea%c\t%d,%c\t; %d\n", ireg, add, ireg, cyc);
 	}
 
 	printf("\t; total = %d\n", cycles);

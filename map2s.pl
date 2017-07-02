@@ -66,6 +66,8 @@ for $y (0..47) {
 			push @objects, [ $ty, $tx, "food" ];
 		} elsif ($m eq 'X') {
 			push @objects, [ $ty, $tx, "tport" ];
+		} elsif ($m eq 's') {
+			push @objects, [ $ty, $tx, "speed" ];
 		} elsif ($m eq '^') {
 			push @objects, [ $ty, $tx, "drainer" ];
 		} elsif ($m eq '-') {

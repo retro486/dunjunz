@@ -7,6 +7,7 @@ all: dunjunz.bin dunjunz.cas
 
 ASM6809 = asm6809 -v
 BIN2CAS = bin2cas.pl
+B2CFLAGS = -r 44100
 CFLAGS += -std=c99
 CLEAN =
 EXTRA_DIST =
@@ -31,65 +32,43 @@ TILES = \
 	stone01 stone02 stone03 stone06 \
 	stone10 stone12 stone13 stone14 \
 	stone17 stone18 stone20 stone21 \
-	stone25 \
-	arrow_up arrow_down arrow_left arrow_right \
-	fball_up fball_down fball_left fball_right \
-	axe_up axe_down axe_left axe_right \
-	sword_up sword_down sword_left sword_right \
-	bones0 bones1 bones2 bones3 \
-	bones4 bones5 bones6 bones7
+	stone25
 
-SPRITES = p1 p2 p3 p4 monster
+TILES_SRC = $(TILES:%=c_%.png) c_bones.png
 
-SPRITES_SRC = \
-	$(SPRITES:%=c_%_up0.png) \
-	$(SPRITES:%=c_%_up1.png) \
-	$(SPRITES:%=c_%_down0.png) \
-	$(SPRITES:%=c_%_down1.png) \
-	$(SPRITES:%=c_%_left0.png) \
-	$(SPRITES:%=c_%_left1.png) \
-	$(SPRITES:%=c_%_right0.png) \
-	$(SPRITES:%=c_%_right1.png)
-
-tiles.s: $(TILES:%=c_%.png) $(EXTRA_TILES:%=c_%.png) $(SPRITES_SRC) ./tile2s Makefile
+tiles.s: $(TILES_SRC) sprites.png ./spritesheet.sh ./exitsheet.sh ./tile2s Makefile
 	echo "; tile bitmaps" > $@
 	echo "" >> $@
-	for t in $(TILES) $(EXTRA_TILES); do \
+	for t in $(TILES); do \
 		echo "tile_$${t}_a" >> $@; \
 		./tile2s -b c_$$t.png >> $@; \
 		echo "" >> $@; \
-		echo "tile_$${t}_b" >> $@; \
-		./tile2s -b -s 4 c_$$t.png >> $@; \
+	done
+	for s in 0 1 2 3 4 5 6 7; do \
+		echo "tile_bones$${s}_a" >> $@; \
+		./tile2s -b -x `expr $$s \* 12` -w 12 c_bones.png >> $@; \
 		echo "" >> $@; \
 	done
-	for s in $(SPRITES); do \
-		for d in up down left right; do \
-			for f in 0 1; do \
-				echo "tile_$${s}_$${d}$${f}_a" >> $@; \
-				./tile2s -b c_$${s}_$${d}$${f}.png >> $@; \
-				echo "" >> $@; \
-				echo "tile_$${s}_$${d}$${f}_b" >> $@; \
-				./tile2s -b -s 4 c_$${s}_$${d}$${f}.png >> $@; \
-				echo "" >> $@; \
-			done; \
-		done; \
-	done
-	echo "; large digits" >> $@
+	./spritesheet.sh sprites.png >> $@
+	./exitsheet.sh exit.png >> $@
+
+utiles.s: s_lnum.png s_snum.png ./tile2s Makefile
+	echo "; large digits" > $@
 	echo "" >> $@
 	for s in 0 1 2 3 4 5 6 7 8 9; do \
 		echo "tile_lnum_$$s" >> $@; \
-		./tile2s -b s_lnum_$$s.png >> $@; \
+		./tile2s -x `expr $$s \* 8` -w 8 -b s_lnum.png >> $@; \
 		echo "" >> $@; \
 	done
 	echo "; small digits" >> $@
 	echo "" >> $@
 	for s in 1 2 3 4 5 6 7 8 9; do \
 		echo "tile_snum_$$s" >> $@; \
-		./tile2s -b s_snum_$$s.png >> $@; \
+		./tile2s -x `expr \( $$s - 1 \) \* 8` -w 8 -b s_snum.png >> $@; \
 		echo "" >> $@; \
 	done
 
-CLEAN += tiles.s
+CLEAN += tiles.s utiles.s
 
 ####
 
@@ -102,7 +81,6 @@ LEVELS_S = $(LEVELS:%=level%.s)
 LEVELS_BIN = $(LEVELS:%=level%.bin)
 LEVELS_BIN_DZ = $(LEVELS:%=level%.bin.dz)
 CLEAN += $(LEVELS_S) $(LEVELS_BIN) $(LEVELS_BIN_DZ) $(LEVELS:%=level%.lis)
-STONE = 01
 
 level%.bin: level%.s
 	$(ASM6809) -B -l $(<:.s=.lis) -o $@ $<
@@ -131,7 +109,7 @@ play-screen.bin: play-screen.s
 CLEAN += play-screen.s play-screen.bin play-screen.bin.dz
 CLEAN += $(TEXT_SCREENS_DZ)
 
-dunjunz.bin: dunjunz.s tiles.s dunzip.s play-screen.bin.dz $(TEXT_SCREENS_DZ) $(LEVELS_BIN_DZ)
+dunjunz.bin: dunjunz.s tiles.s utiles.s play-screen.bin.dz $(TEXT_SCREENS_DZ) $(LEVELS_BIN_DZ)
 	$(ASM6809) -D -e start -l $(<:.s=.lis) -o $@ $<
 CLEAN += dunjunz.lis dunjunz.bin
 
@@ -146,20 +124,32 @@ CLEAN += loading-screen.s loading-screen.bin
 dunjunz.cas dunjunz.wav: loading-screen.bin dunjunz.bin
 	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ --eof-data --dzip --fast \
 		-B -l 0x0400 loading-screen.bin \
-		--vdg 0xe0 --sam-v 6 --sam-f 2 --flasher \
+		--vdg 0xe0 --sam-v 6 --sam-f 2 \
 		-D dunjunz.bin
 
-CLEAN += dunjunz.cas dunjunz.wav
+dunjunz-nl.cas dunjunz-nl.wav: dunjunz.bin
+	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ --eof-data --dzip --fast \
+		-D dunjunz.bin
+
+CLEAN += dunjunz.cas dunjunz.wav dunjunz-nl.cas dunjunz-nl.wav
 
 ####
-
-dunjunz.shtml: dunjunz.head.html dunjunz.body.html dunjunz.foot.html
-	cat dunjunz.head.html dunjunz.body.html dunjunz.foot.html > $@
 
 dunjunz.body.html: dunjunz.md
 	pandoc -t html5 -o $@ $<
 
-CLEAN += dunjunz.body.html
+dunjunz.shtml: dunjunz.head.html dunjunz.body.html dunjunz.foot.html
+	sed "s/%UPDATED%/`date '+%e %b %Y'`/" < dunjunz.head.html > $@
+	cat dunjunz.body.html dunjunz.foot.html >> $@
+
+README.body.html: README.md
+	pandoc -t html5 -o $@ $<
+
+README.shtml: README.head.html README.body.html dunjunz.foot.html
+	sed "s/%UPDATED%/`date '+%e %b %Y'`/" < README.head.html > $@
+	cat README.body.html dunjunz.foot.html >> $@
+
+CLEAN += dunjunz.body.html dunjunz.shtml README.body.html README.shtml
 
 ####
 

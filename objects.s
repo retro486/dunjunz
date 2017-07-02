@@ -77,6 +77,14 @@ arrow_up	OBJ_TILE
 arrow_down	OBJ_TILE
 arrow_left	OBJ_TILE
 arrow_right	OBJ_TILE
+p1_exit4	OBJ_TILE
+p1_exit5	OBJ_TILE
+p1_exit6	OBJ_TILE
+p1_exit7	OBJ_TILE
+p1_exit8	OBJ_TILE
+p1_exit9	OBJ_TILE
+p1_exit10	OBJ_TILE
+p1_exit11	OBJ_TILE
 
 p2_base_tile
 p2_up0		OBJ_TILE
@@ -91,6 +99,14 @@ fball_up	OBJ_TILE
 fball_down	OBJ_TILE
 fball_left	OBJ_TILE
 fball_right	OBJ_TILE
+p2_exit4	OBJ_TILE
+p2_exit5	OBJ_TILE
+p2_exit6	OBJ_TILE
+p2_exit7	OBJ_TILE
+p2_exit8	OBJ_TILE
+p2_exit9	OBJ_TILE
+p2_exit10	OBJ_TILE
+p2_exit11	OBJ_TILE
 
 p3_base_tile
 p3_up0		OBJ_TILE
@@ -105,6 +121,14 @@ axe_up		OBJ_TILE
 axe_down	OBJ_TILE
 axe_left	OBJ_TILE
 axe_right	OBJ_TILE
+p3_exit4	OBJ_TILE
+p3_exit5	OBJ_TILE
+p3_exit6	OBJ_TILE
+p3_exit7	OBJ_TILE
+p3_exit8	OBJ_TILE
+p3_exit9	OBJ_TILE
+p3_exit10	OBJ_TILE
+p3_exit11	OBJ_TILE
 
 p4_base_tile
 p4_up0		OBJ_TILE
@@ -119,6 +143,14 @@ sword_up	OBJ_TILE
 sword_down	OBJ_TILE
 sword_left	OBJ_TILE
 sword_right	OBJ_TILE
+p4_exit4	OBJ_TILE
+p4_exit5	OBJ_TILE
+p4_exit6	OBJ_TILE
+p4_exit7	OBJ_TILE
+p4_exit8	OBJ_TILE
+p4_exit9	OBJ_TILE
+p4_exit10	OBJ_TILE
+p4_exit11	OBJ_TILE
 
 monster_base_tile
 monster_up0	OBJ_TILE
