@@ -32,7 +32,10 @@ TILES = \
 	bones4 bones5 bones6 bones7
 
 EXTRA_TILES = \
-	stone01 \
+	stone01 stone02 stone03 stone06 \
+	stone10 stone12 stone13 stone14 \
+	stone17 stone18 stone20 stone21 \
+	stone25 \
 	fball_up fball_down fball_left fball_right
 
 STONES = \
@@ -44,10 +47,26 @@ STONES = \
 	stone21 \
 	stone25
 
-SPRITES_U = monster_up0 monster_up1 p1_up0 p3_up0 p3_up1 p4_up0 p4_up1
-SPRITES_D = monster_down0 monster_down1 p1_down0 p3_down0 p3_down1 p4_down0 p4_down1
-SPRITES_L = monster_left0 monster_left1 p3_left0
-SPRITES_R = monster_right0 monster_right1 p3_right0
+SPRITES_U = monster_up0 monster_up1 \
+	    p1_up0 p1_up1 \
+	    p2_up0 p2_up1 \
+	    p3_up0 p3_up1 \
+	    p4_up0 p4_up1
+SPRITES_D = monster_down0 monster_down1 \
+	    p1_down0 p1_down1 \
+	    p2_down0 p2_down1 \
+	    p3_down0 p3_down1 \
+	    p4_down0 p4_down1
+SPRITES_L = monster_left0 monster_left1 \
+	    p1_left0 p1_left1 \
+	    p2_left0 p2_left1 \
+	    p3_left0 p3_left1 \
+	    p4_left0 p4_left1
+SPRITES_R = monster_right0 monster_right1 \
+	    p1_right0 p1_right1 \
+	    p2_right0 p2_right1 \
+	    p3_right0 p3_right1 \
+	    p4_right0 p4_right1
 
 SPRITES = $(SPRITES_U) $(SPRITES_D) $(SPRITES_L) $(SPRITES_R)
 
@@ -151,7 +170,8 @@ LEVELS = 01 02 03 04 05 06 \
 
 LEVELS_S = $(LEVELS:%=level%.s)
 LEVELS_BIN = $(LEVELS:%=level%.bin)
-CLEAN += $(LEVELS_S) $(LEVELS_BIN) $(LEVELS:%=level%.lis)
+LEVELS_BIN_DZ = $(LEVELS:%=level%.bin.dz)
+CLEAN += $(LEVELS_S) $(LEVELS_BIN) $(LEVELS_BIN_DZ) $(LEVELS:%=level%.lis)
 STONE = 01
 
 level%.bin: level%.s
@@ -161,18 +181,6 @@ level%.bin: level%.s
 	echo "	include \"objects.s\"" > $@
 	echo "" >> $@
 	./map2s.pl $< >> $@
-
-levels.s: $(LEVELS_S:.s=.map)
-	echo "" > $@
-	for t in $(LEVELS); do \
-		echo "level$${t}_dz" >> $@; \
-		echo "	includebin \"level$${t}.bin.dz\"" >> $@; \
-	done
-	echo "levels" >> $@
-	for t in $(LEVELS); do \
-		echo "	fdb level$${t}_dz" >> $@; \
-	done
-	echo "	fdb levels" >> $@
 
 ####
 
@@ -189,7 +197,7 @@ play-screen.bin: play-screen.s
 
 CLEAN += play-screen.s play-screen.bin play-screen.bin.dz
 
-dunjunz.bin: dunjunz.s tiles.s sprites.s dunzip.s play-screen.bin.dz $(LEVELS_BIN)
+dunjunz.bin: dunjunz.s tiles.s sprites.s dunzip.s play-screen.bin.dz $(LEVELS_BIN_DZ)
 	$(ASM6809) -D -e start -l $(<:.s=.lis) -o $@ $<
 CLEAN += dunjunz.lis dunjunz.bin
 

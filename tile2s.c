@@ -212,7 +212,7 @@ int main(int argc, char **argv) {
 					} else if (reg_a != d0) {
 						cycles += (cyc = 2);
 						printf("\tlda\t#$%02x\t; %d\n", d0, cyc);
-					} else if (reg_b != d0) {
+					} else if (reg_b != d1) {
 						cycles += (cyc = 2);
 						printf("\tldb\t#$%02x\t; %d\n", d1, cyc);
 					}

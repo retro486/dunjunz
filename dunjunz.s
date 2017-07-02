@@ -56,13 +56,13 @@ tile_h		equ 9
 ; viewport addresses
 
 vp1		equ fb0+20*fb_w+1
-vp2		equ fb0+20*fb_w+15
+vp2		equ fb0+20*fb_w+14
 vp3		equ fb0+100*fb_w+1
-vp4		equ fb0+100*fb_w+15
+vp4		equ fb0+100*fb_w+14
 
 ; stats window addresses
 
-stat_win1	equ fb0+21*fb_w+28
+stat_win1	equ fb0+21*fb_w+27
 stat_win2	equ stat_win1+40*fb_w
 stat_win3	equ stat_win1+80*fb_w
 stat_win4	equ stat_win1+120*fb_w
@@ -197,7 +197,8 @@ sizeof_trapdoor
 ; places where we manipulate them directly rather than as offsets into the
 ; player struct.
 
-		org $0002
+		org $0112
+		setdp $00
 
 level		rmb 1
 
@@ -209,9 +210,6 @@ tmp1		rmb 2
 tmp2		rmb 2
 
 ; Avoid the soft reset flag/vector
-
-		org $0080
-		setdp $00
 
 players		equ *-sprite_offset
 player1		equ *-sprite_offset
@@ -477,6 +475,8 @@ start		; binray start address
 
 game_setup
 
+		setdp -1
+
 		; flag all players as "dead" so they get reset
 		lda #$ff
 		sta player1+sprite_hp
@@ -495,6 +495,11 @@ reset_hook	nop
 
 		orcc #$50
 		lds #$0400
+
+		lda #$ff
+		tfr a,dp
+		setdp $ff
+
 		; XXX 64K mode for testing.  I hope to get everything
 		; within 32K.
 		sta $ffdf
@@ -523,6 +528,10 @@ reset_hook	nop
 		; VDG mode = CG6, CSS0
 		lda #$e2
 		sta reg_pia1_pdrb
+
+		lda #$01
+		tfr a,dp
+		setdp $01
 
 		clr anim_count
 
@@ -568,7 +577,12 @@ level_setup
 		inca
 		sta level
 		lsla
-		ldu a,u
+		ldx #levelcache_end
+		stx dzip_end	; dzip end
+		ldx a,u		; dzip start
+		ldu #levelcache
+		jsr dunzip
+		ldu #levelcache
 
 		; u -> level packed bitmap
 		ldy #leveldata
@@ -762,7 +776,7 @@ player_setup
 		sta sprite_hp,u
 		lda plr_dfl_facing,y
 		sta sprite_facing,u
-		clr plr_moving,y
+		clr plr_moving,u
 		ldb #state_plr_draw_room
 		stb sprite_state,u
 20		rts
@@ -979,9 +993,9 @@ scan_controls
 		sta reg_pia1_pdra	; dac = sbs high value
 		stb reg_pia1_crb	; enable sound mux
 
-		clra
+		lda #$01
 		tfr a,dp
-		setdp $00
+		setdp $01
 
 		rts
 
@@ -1094,8 +1108,8 @@ player1_defaults
 		fdb stat_win1		; plr_dfl_stat_win
 		fdb vp1+128		; plr_dfl_vp
 player2_defaults
-		fdb leveldata+$016c	; plr_dfl_pos
-		fcb facing_down		; plr_dfl_facing
+		fdb leveldata+$018b	; plr_dfl_pos
+		fcb facing_right	; plr_dfl_facing
 		fcb 1			; plr_dfl_armour
 		fcb 3			; plr_dfl_power
 		fcb 2			; plr_dfl_ammo
@@ -1103,8 +1117,8 @@ player2_defaults
 		fdb stat_win2		; plr_dfl_stat_win
 		fdb vp2+128		; plr_dfl_vp
 player3_defaults
-		fdb leveldata+$018b	; plr_dfl_pos
-		fcb facing_right	; plr_dfl_facing
+		fdb leveldata+$016c	; plr_dfl_pos
+		fcb facing_down		; plr_dfl_facing
 		fcb 4			; plr_dfl_armour
 		fcb 9			; plr_dfl_power
 		fcb 1			; plr_dfl_ammo
@@ -1158,6 +1172,8 @@ next_dir	equ *+1
 		anda #$03
 		sta next_dir
 		lsla
+		cmpa sprite_facing,u		; same direction?
+		beq mon_change_direction	; try again
 		sta sprite_facing,u
 		ldx sprite_pos,u
 		clr sprite_state,u
@@ -1190,18 +1206,32 @@ sprite_set_render
 		std sprite_undraw_room,u
 		rts
 
+hit_player
+		lda #$90
+		adda plr_armour,u
+		adda sprite_hp,u
+		daa
+		cmpa sprite_hp,u
+		blo 10F
+		clra
+		; XXX player dead
+10		sta sprite_hp,u
+		jsr plr_draw_hp
+		puls x,u
+		bra 30F
+
 mon_check_direction
 		ldx sprite_pos,u
 		ldb sprite_moveoff,u
 		leax b,x
-		cmpx player1+sprite_pos
-		beq 30F
-		cmpx player2+sprite_pos
-		beq 30F
-		cmpx player3+sprite_pos
-		beq 30F
-		cmpx player4+sprite_pos
-		beq 30F
+		pshs x,u
+		ldu #players
+5		cmpx sprite_pos,u
+		beq hit_player
+		leau sizeof_player,u
+		cmpu #players_end
+		blo 5B
+		puls x,u
 		ldy #players
 10		cmpx sprite_pos,y
 		beq 30F
@@ -1216,7 +1246,7 @@ mon_check_direction
 		blo 20B
 		lda ,x
 		bpl 40F
-30		bsr mon_change_direction
+30		jsr mon_change_direction
 		ldy [sprite_render,u]
 		bsr draw_sprite
 		bra next_monster
@@ -1225,10 +1255,10 @@ mon_check_direction
 		andb #$18
 		cmpd sprite_room,u
 		beq 50F
-		bsr sprite_set_render
+		jsr sprite_set_render
 		lda #12
 		bra mon_set_state
-50		bsr sprite_set_render
+50		jsr sprite_set_render
 		bra mon_inc_state
 
 mon_landed
@@ -1282,7 +1312,7 @@ mon_move2
 		bra mon_inc_state
 
 draw_sprite
-		ldd sprite_next_pos,u
+		ldd sprite_pos,u
 		andb #$18
 		cmpd player1+sprite_room
 		bne 20F
@@ -1290,7 +1320,7 @@ draw_sprite
 		leax vp1+128,x
 		jsr ,y
 
-		ldd sprite_next_pos,u
+		ldd sprite_pos,u
 		andb #$18
 20		cmpd player2+sprite_room
 		bne 30F
@@ -1298,7 +1328,7 @@ draw_sprite
 		leax vp2+128,x
 		jsr ,y
 
-		ldd sprite_next_pos,u
+		ldd sprite_pos,u
 		andb #$18
 30		cmpd player3+sprite_room
 		bne 40F
@@ -1306,7 +1336,7 @@ draw_sprite
 		leax vp3+128,x
 		jsr ,y
 
-		ldd sprite_next_pos,u
+		ldd sprite_pos,u
 		andb #$18
 40		cmpd player4+sprite_room
 		bne 90F
@@ -1342,13 +1372,13 @@ plr_move2
 		jmp plr_inc_state
 
 plr_draw_objects
-		jsr undraw_sprite
+		bsr undraw_sprite
 		lda #state_plr_landed
 		sta sprite_state,u
 		jmp next_player
 
 plr_landed
-		jsr undraw_sprite
+		bsr undraw_sprite
 		ldd sprite_next_pos,u
 		std sprite_pos,u
 		andb #$18
@@ -1360,14 +1390,31 @@ plr_landed
 		; pickups...
 		ldx sprite_pos,u
 		ldy #objects
-10		cmpx obj_pos,y
-		bne 20F
-		lda obj_type,y
+10		lda obj_type,y
 		beq 20F
-		pshs x,y
+		cmpx obj_pos,y
+		bne 20F
+		pshs a,x,y
 		ldx #tbl_pickup
 		jsr [a,x]
-		puls x,y
+		puls a
+		ldx #pickup_scores
+		lsra
+		lda a,x
+		beq 15F
+		ldy 2,s
+		clr obj_type,y
+		clr [sprite_pos,u]
+		adda plr_score0,u
+		daa
+		sta plr_score0,u
+		lda plr_score2,u
+		adca #$00
+		daa
+		sta plr_score2,u
+		jsr plr_draw_score
+
+15		puls x,y
 20		leay sizeof_object,y
 		cmpy #objects_end
 		blo 10B
@@ -1407,9 +1454,13 @@ plr_centred
 		beq 40F
 30		bra next_player
 35		lda sprite_hp,u
-		adda #$98
+		; XXX better way of doing this?
+		adda #$99
 		daa
-		sta sprite_hp,u
+		cmpa sprite_hp,u
+		blo 36F
+		clra
+36		sta sprite_hp,u
 		jsr plr_draw_hp
 		bra next_player
 40		stx sprite_next_pos,u
@@ -1443,70 +1494,60 @@ plr_delay	adda #2
 
 pickup_nop	rts
 
+pickup_drainer
+		lda sprite_hp,u
+		suba #$20
+		bcc 10F
+		clra
+10		sta sprite_hp,u
+		jmp plr_draw_hp
+
+pickup_potion
+		lda plr_score0,u
+		anda #$0f
+		ldb #$11
+		mul
+10		stb sprite_hp,u
+		jmp plr_draw_hp
+
 pickup_food
-		clr obj_type,y
-		clr [sprite_pos,u]
 		lda sprite_hp,u
 		adda #$10
 		daa
-		bvc 10F
+		bcc 10F
 		lda #$99
 10		sta sprite_hp,u
-		jsr plr_draw_hp
-		bra points_5
+		jmp plr_draw_hp
 
 pickup_armour
-		clr obj_type,y
-		clr [sprite_pos,u]
 		lda plr_armour,u
 		inca
 		cmpa #7
-		bhi points_10
+		bhi 99F
 		sta plr_armour,u
-		jsr plr_draw_armour
-		bra points_10
+		jmp plr_draw_armour
+99		rts
 
-points_5	lda plr_score0,u
-		adda #$05
-		bra 10F
-points_10	lda plr_score0,u
-		adda #$10
-		bra 10F
 pickup_money
-		clr obj_type,y
-		clr [sprite_pos,u]
-		lda plr_score0,u
-		adda #$20
-10		daa
-		sta plr_score0,u
-		bcc 10F
-		lda plr_score2,u
-		adda #$01
-		daa
-		sta plr_score2,u
-10		jmp plr_draw_score
+		rts
 
 pickup_power
-		clr obj_type,y
-		clr [sprite_pos,u]
 		lda plr_power,u
 		inca
 		cmpa #9
-		bhi points_10
+		bhi 99F
 		sta plr_power,u
-		jsr plr_draw_power
-		bra points_10
+		jmp plr_draw_power
+99		rts
 
 pickup_weapon
-		clr obj_type,y
-		clr [sprite_pos,u]
 		lda plr_ammo,u
 		inca
 		cmpa #3
-		bhi points_10
+		bhi 99F
 		sta plr_ammo,u
-		jsr plr_draw_ammo
-		bra points_10
+		jmp plr_draw_ammo
+99		rts
 
 jtbl_monster_state
 		fdb mon_centred		; 0
@@ -1533,17 +1574,32 @@ state_plr_draw_room	equ *-jtbl_player_state
 tbl_pickup	equ *-2		; no dispatch for floor
 		fdb pickup_nop	; exit
 		fdb pickup_nop	; trapdoor
-		fdb pickup_nop	; drainer
+		fdb pickup_drainer	; drainer
 		fdb pickup_money
 		fdb pickup_food
 		fdb pickup_nop	; tport
 		fdb pickup_power
 		fdb pickup_armour
-		fdb pickup_nop	; potion
+		fdb pickup_potion
 		fdb pickup_weapon
 		fdb pickup_nop	; cross
 		fdb pickup_nop	; speed
 		fdb pickup_nop	; key
+
+pickup_scores	equ *-1		; floor not a pickup
+		fcb 0		; exit
+		fcb 0		; trapdoor
+		fcb 0		; drainer
+		fcb $20		; money
+		fcb $05		; food
+		fcb 0		; tport
+		fcb $10		; power
+		fcb $10		; armour
+		fcb $10		; potion
+		fcb $10		; weapon
+		fcb $10		; cross
+		fcb $10		; speed
+		fcb 0		; key
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1556,30 +1612,30 @@ spr_draw_seq	macro
 spriteset_p1
 		spr_draw_seq "p1","up","0","a"
 		spr_draw_seq "p1","up","0","b"
-		spr_draw_seq "monster","up","1","a"
-		spr_draw_seq "monster","up","1","b"
+		spr_draw_seq "p1","up","1","a"
+		spr_draw_seq "p1","up","1","b"
 		spr_draw_seq "p1","down","0","a"
 		spr_draw_seq "p1","down","0","b"
-		spr_draw_seq "monster","down","1","a"
-		spr_draw_seq "monster","down","1","b"
-		spr_draw_seq "monster","left","0","a"
-		spr_draw_seq "monster","left","1","b"
-		spr_draw_seq "monster","right","0","a"
-		spr_draw_seq "monster","right","1","b"
+		spr_draw_seq "p1","down","1","a"
+		spr_draw_seq "p1","down","1","b"
+		spr_draw_seq "p1","left","0","a"
+		spr_draw_seq "p1","left","1","b"
+		spr_draw_seq "p1","right","0","a"
+		spr_draw_seq "p1","right","1","b"
 
 spriteset_p2
-		spr_draw_seq "monster","up","0","a"
-		spr_draw_seq "monster","up","0","b"
-		spr_draw_seq "monster","up","1","a"
-		spr_draw_seq "monster","up","1","b"
-		spr_draw_seq "monster","down","0","a"
-		spr_draw_seq "monster","down","0","b"
-		spr_draw_seq "monster","down","1","a"
-		spr_draw_seq "monster","down","1","b"
-		spr_draw_seq "monster","left","0","a"
-		spr_draw_seq "monster","left","1","b"
-		spr_draw_seq "monster","right","0","a"
-		spr_draw_seq "monster","right","1","b"
+		spr_draw_seq "p2","up","0","a"
+		spr_draw_seq "p2","up","0","b"
+		spr_draw_seq "p2","up","1","a"
+		spr_draw_seq "p2","up","1","b"
+		spr_draw_seq "p2","down","0","a"
+		spr_draw_seq "p2","down","0","b"
+		spr_draw_seq "p2","down","1","a"
+		spr_draw_seq "p2","down","1","b"
+		spr_draw_seq "p2","left","0","a"
+		spr_draw_seq "p2","left","1","b"
+		spr_draw_seq "p2","right","0","a"
+		spr_draw_seq "p2","right","1","b"
 
 spriteset_p3
 		spr_draw_seq "p3","up","0","a"
@@ -1590,10 +1646,10 @@ spriteset_p3
 		spr_draw_seq "p3","down","0","b"
 		spr_draw_seq "p3","down","1","a"
 		spr_draw_seq "p3","down","1","b"
-		spr_draw_seq "monster","left","0","a"
-		spr_draw_seq "monster","left","1","b"
-		spr_draw_seq "monster","right","0","a"
-		spr_draw_seq "monster","right","1","b"
+		spr_draw_seq "p3","left","0","a"
+		spr_draw_seq "p3","left","1","b"
+		spr_draw_seq "p3","right","0","a"
+		spr_draw_seq "p3","right","1","b"
 
 spriteset_p4
 		spr_draw_seq "p4","up","0","a"
@@ -1604,10 +1660,10 @@ spriteset_p4
 		spr_draw_seq "p4","down","0","b"
 		spr_draw_seq "p4","down","1","a"
 		spr_draw_seq "p4","down","1","b"
-		spr_draw_seq "monster","left","0","a"
-		spr_draw_seq "monster","left","1","b"
-		spr_draw_seq "monster","right","0","a"
-		spr_draw_seq "monster","right","1","b"
+		spr_draw_seq "p4","left","0","a"
+		spr_draw_seq "p4","left","1","b"
+		spr_draw_seq "p4","right","0","a"
+		spr_draw_seq "p4","right","1","b"
 
 dir_offsets	fcb -32,0	; facing_up
 		fcb 32,24	; facing_down
@@ -1671,30 +1727,30 @@ levels
 		fdb level17,level18,level19,level20
 		fdb level21,level22,level23,level24
 
-level1		includebin "level01.bin"
-level2		includebin "level02.bin"
-level3		includebin "level03.bin"
-level4		includebin "level04.bin"
-level5		includebin "level05.bin"
-level6		includebin "level06.bin"
-level7		includebin "level07.bin"
-level8		includebin "level08.bin"
-level9		includebin "level09.bin"
-level10		includebin "level10.bin"
-level11		includebin "level11.bin"
-level12		includebin "level12.bin"
-level13		includebin "level13.bin"
-level14		includebin "level14.bin"
-level15		includebin "level15.bin"
-level16		includebin "level16.bin"
-level17		includebin "level17.bin"
-level18		includebin "level18.bin"
-level19		includebin "level19.bin"
-level20		includebin "level20.bin"
-level21		includebin "level21.bin"
-level22		includebin "level22.bin"
-level23		includebin "level23.bin"
-level24		includebin "level24.bin"
+level1		includebin "level01.bin.dz"
+level2		includebin "level02.bin.dz"
+level3		includebin "level03.bin.dz"
+level4		includebin "level04.bin.dz"
+level5		includebin "level05.bin.dz"
+level6		includebin "level06.bin.dz"
+level7		includebin "level07.bin.dz"
+level8		includebin "level08.bin.dz"
+level9		includebin "level09.bin.dz"
+level10		includebin "level10.bin.dz"
+level11		includebin "level11.bin.dz"
+level12		includebin "level12.bin.dz"
+level13		includebin "level13.bin.dz"
+level14		includebin "level14.bin.dz"
+level15		includebin "level15.bin.dz"
+level16		includebin "level16.bin.dz"
+level17		includebin "level17.bin.dz"
+level18		includebin "level18.bin.dz"
+level19		includebin "level19.bin.dz"
+level20		includebin "level20.bin.dz"
+level21		includebin "level21.bin.dz"
+level22		includebin "level22.bin.dz"
+level23		includebin "level23.bin.dz"
+level24		includebin "level24.bin.dz"
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1757,3 +1813,6 @@ keys		rmb max_keys*sizeof_object
 items		rmb max_items*sizeof_object
 		rmb max_trapdoors*sizeof_object
 objects_end
+
+levelcache	rmb 378
+levelcache_end
