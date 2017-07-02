@@ -12,6 +12,10 @@ behaviour is inferred.
 Level data was, however, converted from the BBC disk version using
 information gleaned from David Boddie's Python scripts.
 
+For binaries, check out the [home page].
+
+[home page]: http://www.6809.org.uk/dunjunz/
+
 ## Building from source
 
 The build system very much depends on a Unix-like environment.  You'll need
