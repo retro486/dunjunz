@@ -20,6 +20,8 @@ OBJ_TILE	macro
 ; Doors, drawn only on initial viewport render.  Negative values
 ; distinguish them from pickups.
 
+door_v1		OBJ_TILE
+door_h1		OBJ_TILE
 door_v		OBJ_TILE
 door_h		OBJ_TILE
 
@@ -49,7 +51,12 @@ always_draw_tile
 drainer		OBJ_TILE
 money		OBJ_TILE
 power		OBJ_TILE
+
+		; ensure pair alignment of following
+		OBJ_PAIR_ALIGN
+
 key		OBJ_TILE
+key1		OBJ_TILE
 
 ; Player graphics.  Not real objects, just used to index into graphics
 ; tables.  It's important that *0 and *1 are aligned to an even multiple

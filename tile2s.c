@@ -1,3 +1,19 @@
+/*
+
+tile2s - convert image to 6809 assembly source
+Copyright 2014-2017 Ciaran Anscomb
+
+License: GNU GPL version 3 or later <http://www.gnu.org/licenses/gpl-3.0.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Special exception: The code generated as output is not considered to be part of
+this program, so the GPL doesn't apply to the results.
+
+See the output of "tile2s --help" for options.
+
+*/
+
 #include <ctype.h>
 #include <getopt.h>
 #include <stdio.h>

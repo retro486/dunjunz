@@ -14,6 +14,13 @@ EXTRA_DIST =
 
 ####
 
+./tile2s: CFLAGS += $(shell sdl-config --cflags)
+./tile2s: LDLIBS += $(shell sdl-config --libs) -lSDL_image
+
+CLEAN += ./tile2s
+
+####
+
 %.bin: %.s
 	$(ASM6809) $(AFLAGS) -l $(<:.s=.lis) -o $@ $<
 
@@ -24,25 +31,28 @@ EXTRA_DIST =
 	perl -pe 'chomp if eof' $< | sed 's/            /\o213/g;s/        /\o207/g;s/       /\o206/g;s/      /\o205/g;s/     /\o204/g;s/    /\o203/g;s/   /\o202/g;s/  /\o201/g' | tr '123456()\!A-Z.,\- \012\014' '\001-\047\377\377' > $@
 	/bin/echo -ne '\00' >> $@
 
+%.s: %.map ./map2s.pl
+	echo "	include \"objects.s\"" > $@
+	echo >> $@
+	./map2s.pl $< >> $@
+
 ####
 
 .PHONY: version.txt
 version.txt:
-	echo "  DUNJUNZ - BETA2.1" > $@
+	echo "   DUNJUNZ - BETA3" > $@
+
+CLEAN += version.txt
 
 tiles.s: ./tilesheet.sh tiles.png ./tile2s Makefile
 	./tilesheet.sh tiles.png > $@
 
 CLEAN += tiles.s
 
-textfont.s: textfont.png ./tile2s Makefile
-	echo "; text font" > $@
-	echo >> $@
-	for j in 0 1 2 3 4; do \
-		for i in 0 1 2 3 4 5 6 7; do \
-			./tile2s -b -x `expr $$i \* 12` -y `expr $$j \* 6` -w 12 -h 6 -r textfont.png >> $@; \
-		done; \
-	done
+fonts.s: ./fontsheet.sh fonts.png ./tile2s Makefile
+	./fontsheet.sh fonts.png > $@
+
+CLEAN += fonts.s
 
 ####
 
@@ -54,20 +64,13 @@ LEVELS = 01 02 03 04 05 06 \
 LEVELS_S = $(LEVELS:%=level%.s)
 LEVELS_BIN = $(LEVELS:%=level%.bin)
 LEVELS_BIN_DZ = $(LEVELS:%=level%.bin.dz)
+
 CLEAN += $(LEVELS_S) $(LEVELS_BIN) $(LEVELS_BIN_DZ) $(LEVELS:%=level%.lis)
 
 level%.bin: level%.s objects.s
 	$(ASM6809) -B -l $(<:.s=.lis) -o $@ $<
 
-%.s: %.map ./map2s.pl
-	echo "	include \"objects.s\"" > $@
-	echo >> $@
-	./map2s.pl $< >> $@
-
 ####
-
-./tile2s: CFLAGS += $(shell sdl-config --cflags)
-./tile2s: LDLIBS += $(shell sdl-config --libs) -lSDL_image
 
 $(LEVELS_S): objects.s
 
@@ -108,7 +111,7 @@ notefreq.s: ./gen_notefreq.pl Makefile
 
 CLEAN += notefreq.s
 
-dunjunz.bin: dunjunz.s notefreq.s tiles.s textfont.s $(TEXT_INCLUDES) ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(LEVELS_BIN_DZ)
+dunjunz.bin: dunjunz.s notefreq.s tiles.s fonts.s $(TEXT_INCLUDES) ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(LEVELS_BIN_DZ)
 	$(ASM6809) -C -e start -l $(<:.s=.lis) -o $@ $<
 CLEAN += dunjunz.lis dunjunz.bin
 

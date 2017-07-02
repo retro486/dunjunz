@@ -162,9 +162,12 @@ bitmap_a tile_potion   $((W*5)) $((H*3))
 bitmap_a tile_cross    $((W*6)) $((H*3))
 bitmap_a tile_speed    $((W*7)) $((H*3))
 
-bitmap_a tile_door_v   $((W*4)) $((H*4))
-bitmap_a tile_door_h   $((W*5)) $((H*4))
-bitmap_a tile_key      $((W*6)) $((H*4))
+bitmap_a tile_door_v   $((W*5)) $((H*4))
+bitmap_a tile_door_h   $((W*6)) $((H*4))
+bitmap_a tile_key      $((W*7)) $((H*4))
+bitmap_a tile_door1_v  $((W*5)) $((H*11))
+bitmap_a tile_door1_h  $((W*6)) $((H*11))
+bitmap_a tile_key1     $((W*7)) $((H*11))
 
 echo "; stones"
 echo
@@ -210,45 +213,15 @@ echo
 echo "; chalice"
 echo
 
-bitmap_a tile_chalice_nw0 $((W*6)) $((H*11))
-bitmap_b tile_chalice_ne0 $((W*6)) $((H*11)) -X
-bitmap_a tile_chalice_sw0 $((W*6)) $((H*11)) -Y
-bitmap_b tile_chalice_se0 $((W*6)) $((H*11)) -X -Y
+bitmap_a tile_chalice_nw0 $((W*2)) $((H*11))
+bitmap_b tile_chalice_ne0 $((W*2)) $((H*11)) -X
+bitmap_a tile_chalice_sw0 $((W*2)) $((H*11)) -Y
+bitmap_b tile_chalice_se0 $((W*2)) $((H*11)) -X -Y
 
-bitmap_a tile_chalice_nw1 $((W*7)) $((H*11))
-bitmap_b tile_chalice_ne1 $((W*7)) $((H*11)) -X
-bitmap_a tile_chalice_sw1 $((W*7)) $((H*11)) -Y
-bitmap_b tile_chalice_se1 $((W*7)) $((H*11)) -X -Y
+bitmap_a tile_chalice_nw1 $((W*3)) $((H*11))
+bitmap_b tile_chalice_ne1 $((W*3)) $((H*11)) -X
+bitmap_a tile_chalice_sw1 $((W*3)) $((H*11)) -Y
+bitmap_b tile_chalice_se1 $((W*3)) $((H*11)) -X -Y
 
 echo "chalice_end"
-echo
-
-echo "; large digits"
-echo
-
-echo "lnum_tiles_start"
-echo
-
-for i in 0 1 2 3 4 5 6 7 8 9; do
-	echo "tile_lnum_$i"
-	"$TILE2S" -b -x $((i*8)) -y $((H*12)) -w 8 -h 7 "$sheet"
-	echo
-done
-
-echo "lnum_tiles_end"
-echo
-
-echo "; small digits"
-echo
-
-echo "snum_tiles_start"
-echo
-
-for i in 1 2 3 4 5 6 7 8 9; do
-	echo "tile_snum_$i"
-	"$TILE2S" -b -x $(((i-1)*8)) -y $((H*12+7)) -w 8 -h 5 "$sheet"
-	echo
-done
-
-echo "snum_tiles_end"
 echo
