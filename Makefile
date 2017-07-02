@@ -40,7 +40,7 @@ CLEAN += ./tile2s
 
 .PHONY: version.txt
 version.txt:
-	echo "   DUNJUNZ - BETA3" > $@
+	echo "  DUNJUNZ - BETA3.2" > $@
 
 CLEAN += version.txt
 

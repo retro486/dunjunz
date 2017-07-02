@@ -247,6 +247,19 @@ STATE_ID	macro
 \1		equ *-19824B
 		endm
 
+; Patches that directly modify code to cope with different machine or
+; display variants use a common format.
+
+PATCH		macro
+		fcb 19826F-19825F
+		fdb \1
+19825
+		endm
+
+ENDPATCH	macro
+19826
+		endm
+
 ; ========================================================================
 
 ; Direct page variables
@@ -279,6 +292,7 @@ psg_c2pri	rmb 1
 
 difficulty	rmb 1
 sound		rmb 1
+joystk_mode	rmb 1
 level		rmb 1
 
 anim_count	rmb 1
@@ -436,8 +450,9 @@ psg_c1val	equ *+1
 
 		; - - - - - - - - - - - - - - - - - - - - - - -
 
-		lda #$35
+		ldd #$3580
 		sta reg_pia1_crb	; disable sound mux
+		stb ,u			; centre DAC
 
 		lda #gamedp
 		tfr a,dp
@@ -861,6 +876,17 @@ mod_edelay	equ *+1
 		bra 30B
 
 90		leas 5,s
+
+		; finish off
+		ldb #15
+		pshs b
+91		jsr animate
+		jsr eanim_step
+		jsr psg_play2frags
+		dec ,s
+		bne 91B
+		leas 1,s
+
 		jmp level_setup
 
 eanim_start
@@ -1135,7 +1161,8 @@ game_reset	nop
 		clr reg_pia1_cra	; ddr...
 		stb reg_pia1_ddra	; only DAC bits are outputs
 		clr reg_pia1_crb	; ddr...
-PATCH_p1ddrb	lda #$fc		; VDG & ROMSEL as outputs
+PATCH_p1ddrb	equ *+1
+		lda #$fc		; VDG & ROMSEL as outputs
 		sta reg_pia1_ddrb
 		ldd #$343c
 		sta reg_pia0_cra	; HS disabled
@@ -1170,11 +1197,16 @@ PATCH_p1ddrb	lda #$fc		; VDG & ROMSEL as outputs
 		ldy #select_screen
 		jsr write_screen
 
+mod_skip_init	brn skip_init
 		clr difficulty
+		clr joystk_mode
 		lda #$0f
 		sta playing
+		dec mod_skip_init	; change to bra
 set_sound_on	lda #$fc
 update_sound	sta sound
+
+skip_init
 
 update_select_screen
 		ldx #fb0+24*fb_w+4*8*fb_w+128
@@ -1205,6 +1237,12 @@ update_select_screen
 		ldy #text_on
 10		jsr write_continue
 
+		ldy #text_1
+		tst joystk_mode
+		beq 10F
+		ldy #text_2
+10		jsr write_continue
+
 		ldx #tbl_kdsp_menu
 		jmp wait_keypress_jump
 
@@ -1223,12 +1261,14 @@ toggle_sound	lda sound
 		bra update_sound
 toggle_skill	com difficulty
 		bra update_select_screen
+toggle_joystk	com joystk_mode
+		bra update_select_screen
 
 show_version	ldx #fb0+24*fb_w+128
 		stx tmp0
 		ldy #version
 		jsr write_continue
-		bra update_select_screen
+		jmp update_select_screen
 
 		DATA
 select_screen	fcb 8
@@ -1240,6 +1280,8 @@ text_hard	fcb $ff,$8e,$11,$0a,$1b,$0d,0
 text_easy	fcb $ff,$8e,$0e,$0a,$1c,$22,0
 text_on		fcb $ff,$8e,$18,$17,$27,0
 text_off	fcb $ff,$8e,$18,$0f,$0f,0
+text_1		fcb $ff,$ff,$8e,$01,0
+text_2		fcb $ff,$ff,$8e,$02,0
 version		includebin "version.bin"
 		CODE
 
@@ -1251,6 +1293,7 @@ tbl_kdsp_menu	KEYDSP_ENTRY 7,5,start_game	; SPACE
 		KEYDSP_ENTRY 4,0,toggle_p4	; '4'
 		KEYDSP_ENTRY 4,2,toggle_skill	; 'D'
 		KEYDSP_ENTRY 3,4,toggle_sound	; 'S'
+		KEYDSP_ENTRY 2,3,toggle_joystk	; 'J'
 		KEYDSP_ENTRY 6,6,show_version	; N/C
 		fdb 0
 		CODE
@@ -1259,7 +1302,7 @@ start_game
 
 		; must select some players
 		lda playing
-		beq update_select_screen
+		lbeq update_select_screen
 
 		lda difficulty
 		bne 5F
@@ -1280,6 +1323,14 @@ start_game
 		ldd #$1480	; 20, 100-20
 6		sta mod_drainer_hp
 		stb mod_drainer_dmg
+
+		lda joystk_mode
+		bne 5F
+		lda #$27	; beq
+		fcb $8c		; cmpx
+5		lda #$26	; bne
+		sta mod_joystk_p3
+		sta mod_joystk_p4
 
 		; flag all players as "dead" so they get reset
 		lda #$ff
@@ -1781,6 +1832,7 @@ plr_scan_controls
 		lda #1			; fire
 		sta plr_control,u
 10		ldb p3_moved
+mod_joystk_p3	equ *
 		beq 30F
 		bsr joy_yaxis
 		bcc 20F
@@ -1805,6 +1857,7 @@ plr_scan_controls
 		lda #1			; fire
 		sta plr_control,u
 10		ldb p4_moved
+mod_joystk_p4	equ *
 		beq 30F
 		bsr joy_yaxis
 		bcc 20F
@@ -1814,7 +1867,7 @@ plr_scan_controls
 		bra 50F
 30		bsr joy_xaxis
 		bcc 40F
-		jsr spr_move_control
+		bsr spr_move_control
 		beq 50F
 40		bsr joy_yaxis
 50
@@ -1869,6 +1922,18 @@ joy_xaxis	lda #$34
 
 90		andcc #~1
 		rts
+
+spr_move_control
+		anda #$7f
+		ldx obj_y,u
+		pshs x
+		ldx spr_next_y,u
+		stx obj_y,u
+		jsr spr_move_a
+		pshs cc
+		ldx 1,s
+		stx obj_y,u
+		puls cc,x,pc
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1964,19 +2029,20 @@ plr_draw_ammo	ldx plr_swin,u
 		sta tmp1
 		suba #4
 		sta tmp1+1
-PATCH_draw_ammo0
+PATCH_draw_ammo0	equ *+1
 		ldd #$55ba
 		stb 1,x
 		leax fb_w,x
-PATCH_draw_ammo1
+PATCH_draw_ammo1	equ *+1
 10		ldb #$7e
 		std ,x
+PATCH_draw_ammo2	equ *+1
 		ldb #$ba
 		stb fb_w+1,x
 		leax 2*fb_w,x
 		dec tmp1
 		bne 10B
-PATCH_draw_ammo2	equ *+1
+PATCH_draw_ammo3	equ *+1
 		ldd #$aaaa
 20		inc tmp1+1
 		beq 30F
@@ -1990,21 +2056,21 @@ plr_draw_key	ldx plr_swin,u
 		leax 2+32,x
 		lda plr_speed,u
 		bmi plr_draw_key1
-PATCH_draw_key0
+PATCH_draw_key0	equ *+1
 		ldd #$a656
 		sta -32,x
 		stb ,x
-PATCH_draw_key1
+PATCH_draw_key1	equ *+1
 		lda #$66
 		sta 32,x
 		rts
 
 plr_draw_key1
-PATCH_draw_key01
+PATCH_draw_key01	equ *+1
 		ldd #$a202
 		sta -32,x
 		stb ,x
-PATCH_draw_key11
+PATCH_draw_key11	equ *+1
 		lda #$22
 		sta 32,x
 		rts
@@ -2020,13 +2086,13 @@ PATCH_undraw_key	equ *+1
 
 plr_draw_speed	ldx plr_swin,u
 		leax 4*fb_w+2+64,x
-PATCH_draw_speed0
+PATCH_draw_speed0	equ *+1
 		ldd #$a69a
 		sta -64,x
 		stb -32,x
 		sta ,x
 		stb 32,x
-PATCH_draw_speed1
+PATCH_draw_speed1	equ *+1
 		lda #$6a
 		sta 64,x
 		rts
@@ -2132,9 +2198,6 @@ spr_set_tile
 ; 	x -> stone bitmap byte
 ; 	cc.z = 1 if not stone/door
 
-spr_move_control
-		anda #$7f
-		bra spr_move_a
 spr_move
 		lda spr_facing,u
 spr_move_a
@@ -3897,7 +3960,7 @@ ntsc_phase0
 		; Simple patches
 		clra
 		clrb
-		std PATCH_draw_ammo2
+		std PATCH_draw_ammo3
 		std PATCH_undraw_key
 		std PATCH_undraw_speed
 
@@ -4007,52 +4070,46 @@ palette_swap_u	pshs b
 ; CoCo patches
 
 coco_patches
-		fcb 200F-100F		; patch size
-		fdb tbl_kdsp_menu	; patch destination
-100
-coco_kdsp_menu	KEYDSP_ENTRY 7,3,start_game	; SPACE
+
+		PATCH tbl_kdsp_menu
+		KEYDSP_ENTRY 7,3,start_game	; SPACE
 		KEYDSP_ENTRY 1,4,toggle_p1	; '1'
 		KEYDSP_ENTRY 2,4,toggle_p2	; '2'
 		KEYDSP_ENTRY 3,4,toggle_p3	; '3'
 		KEYDSP_ENTRY 4,4,toggle_p4	; '4'
 		KEYDSP_ENTRY 4,0,toggle_skill	; 'D'
 		KEYDSP_ENTRY 3,2,toggle_sound	; 'S'
-200
+		KEYDSP_ENTRY 2,1,toggle_joystk	; 'J'
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb tbl_p1_keys		; patch destination
-100
-coco_p1_keys	KEYTBL_ENTRY 1,4,2			; '1' = magic
+		PATCH tbl_p1_keys
+		KEYTBL_ENTRY 1,4,2			; '1' = magic
 		KEYTBL_ENTRY 2,4,$80|facing_up		; '2' = up
 		KEYTBL_ENTRY 7,2,$80|facing_down	; 'W' = down
 		KEYTBL_ENTRY 4,4,$80|facing_right	; '4' = right
 		KEYTBL_ENTRY 3,4,$80|facing_left	; '3' = left
 		KEYTBL_ENTRY 5,4,1			; '5' = fire
 		fdb 0
-coco_p2_keys	KEYTBL_ENTRY 7,5,2			; '/' = magic
+		KEYTBL_ENTRY 7,5,2			; '/' = magic
 		KEYTBL_ENTRY 0,2,$80|facing_up		; 'P' = up
 		KEYTBL_ENTRY 3,5,$80|facing_down	; ';' = down
 		KEYTBL_ENTRY 6,5,$80|facing_right	; '.' = right
 		KEYTBL_ENTRY 4,5,$80|facing_left	; ',' = left
 		KEYTBL_ENTRY 0,4,1			; '0' = fire
 		fdb 0
-200
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb tbl_kdsp_vs		; patch destination
-100
-coco_kdsp_vs	KEYDSP_ENTRY 0,2,vs_pal		; 'P'
+		PATCH tbl_kdsp_vs
+		KEYDSP_ENTRY 0,2,vs_pal		; 'P'
 		KEYDSP_ENTRY 6,1,vs_ntsc	; 'N'
 		KEYDSP_ENTRY 3,3,vs_toggle	; UP
 		KEYDSP_ENTRY 4,3,vs_toggle	; DOWN
 		; no patch required for ENTER
-200
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb PATCH_p1ddrb	; patch destination
-100
-coco_p1ddrb	lda #$f8		; VDG ONLY as outputs
-200
+		PATCH PATCH_p1ddrb
+		fcb $f8		; lda #$f8 - VDG ONLY as outputs
+		ENDPATCH
 
 		fcb 0			; no more patches
 
@@ -4061,72 +4118,55 @@ coco_p1ddrb	lda #$f8		; VDG ONLY as outputs
 ; NTSC patches
 
 ntsc_patches
-		fcb 200F-100F		; patch size
-		fdb PATCH_vdgmode_game	; patch destination
-100
-		fcb $fa			; VDG mode RG6, CSS1
-200
 
-		fcb 200F-100F		; patch size
-		fdb PATCH_draw_key0	; patch destination
-100
-		ldd #$0cfc
-200
+		PATCH PATCH_vdgmode_game
+		fcb $fa		; lda #$fa - VDG mode RG6, CSS1
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb PATCH_draw_key1	; patch destination
-100
-		lda #$cc
-200
+		PATCH PATCH_draw_key0
+		fdb $0cfc	; ldd #$0cfc
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb PATCH_draw_key01	; patch destination
-100
-mod_PATCH_draw_key01	equ *+1
-		ldd #$0454
-200
+		PATCH PATCH_draw_key1
+		fcb $cc		; lda #$cc
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb PATCH_draw_key11	; patch destination
-100
-mod_PATCH_draw_key11	equ *+1
-		lda #$44
-200
+		PATCH PATCH_draw_key01
+mod_PATCH_draw_key01	equ *
+		fdb $0454	; ldd #$0454
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb PATCH_draw_speed0	; patch destination
-100
-		ldd #$0c30
-200
+		PATCH PATCH_draw_key11
+mod_PATCH_draw_key11	equ *
+		fcb $44		; lda #$44
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb PATCH_draw_speed1	; patch destination
-100
-		lda #$c0
-200
+		PATCH PATCH_draw_speed0
+		fdb $0c30	; ldd #$0c30
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb PATCH_draw_ammo0	; patch destination
-100
-mod_PATCH_draw_ammo0	equ *+2
-		ldd #$ff20
-200
+		PATCH PATCH_draw_speed1
+		fcb $c0		; lda #$c0
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb PATCH_draw_ammo1	; patch destination
-100
-mod_PATCH_draw_ammo1	equ *+1
-		ldb #$e8
-		std ,x
-mod_PATCH_draw_ammo2	equ *+1
-		ldb #$20
-200
+		PATCH PATCH_draw_ammo0
+mod_PATCH_draw_ammo0	equ *+1
+		fdb $ff20	; ldd #$ff20
+		ENDPATCH
 
-		fcb 200F-100F		; patch size
-		fdb play_screen_dz	; patch destination
-100
+		PATCH PATCH_draw_ammo1
+mod_PATCH_draw_ammo1	equ *
+		fcb $e8		; ldb #$e8
+		ENDPATCH
+
+		PATCH PATCH_draw_ammo2
+mod_PATCH_draw_ammo2	equ *
+		fcb $0		; ldb #$20
+		ENDPATCH
+
+		PATCH play_screen_dz
 		includebin "play-screen-ntsc.bin.dz"
-200
+		ENDPATCH
 
 		fcb 0			; no more patches
 
@@ -4148,8 +4188,8 @@ tbl_kdsp_ntsc	KEYDSP_ENTRY 0,6,ntsc_phase0	; ENTER
 		KEYDSP_ENTRY 1,6,ntsc_phase1	; CLEAR
 		fdb 0
 
-thanks		fcb 9
-		fdb fb0+9*fb_w+128
+thanks		fcb 10
+		fdb fb0+6*fb_w+128+1
 		includebin "thanks.bin"
 video_select	fcb 10
 		fdb fb0+24*fb_w+128
