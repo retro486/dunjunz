@@ -35,6 +35,6 @@ dunz_run	stb	,u+
 		inca
 		bvc	1B		; count UP until B == 128
 zdata_end	equ	* + 1
-80		cmpu	dzip_end
+80		cmpu	<dzip_end
 		blo	dunz_loop
 		rts

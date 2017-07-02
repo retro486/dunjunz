@@ -9,13 +9,16 @@ debian/
 dunjunz.bin
 dunjunz.lis
 level*.s
-level*.bin
+level*.bin.dz
 level*.lis
 loading-screen.bin
 loading-screen.s
 play-screen.bin
 play-screen.bin.dz
 play-screen.s
+death-screen.bin.dz
+end-screen.bin.dz
+select-screen.bin.dz
 sprites.s
 tile2s
 tiles.s

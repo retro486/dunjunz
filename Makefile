@@ -22,151 +22,81 @@ EXTRA_DIST =
 ####
 
 TILES = \
+	door_v door_h \
 	floor \
-	armour cross food money \
-	potion power speed weapon \
-	exit tport \
-	trapdoor drainer0 drainer1 \
-	key door_h door_v \
-	bones0 bones1 bones2 bones3 \
-	bones4 bones5 bones6 bones7
-
-EXTRA_TILES = \
+	exit trapdoor money food \
+	tport power armour potion \
+	weapon cross speed \
+	drainer0 drainer1 key \
 	stone01 stone02 stone03 stone06 \
 	stone10 stone12 stone13 stone14 \
 	stone17 stone18 stone20 stone21 \
 	stone25 \
-	fball_up fball_down fball_left fball_right
+	arrow_up arrow_down arrow_left arrow_right \
+	fball_up fball_down fball_left fball_right \
+	axe_up axe_down axe_left axe_right \
+	sword_up sword_down sword_left sword_right \
+	bones0 bones1 bones2 bones3 \
+	bones4 bones5 bones6 bones7
 
-STONES = \
-	stone01 stone02 stone03 \
-	stone06 \
-	stone10 stone12 \
-	stone13 stone14 \
-	stone17 stone18 stone20 \
-	stone21 \
-	stone25
+SPRITES = p1 p2 p3 p4 monster
 
-SPRITES_U = monster_up0 monster_up1 \
-	    p1_up0 p1_up1 \
-	    p2_up0 p2_up1 \
-	    p3_up0 p3_up1 \
-	    p4_up0 p4_up1
-SPRITES_D = monster_down0 monster_down1 \
-	    p1_down0 p1_down1 \
-	    p2_down0 p2_down1 \
-	    p3_down0 p3_down1 \
-	    p4_down0 p4_down1
-SPRITES_L = monster_left0 monster_left1 \
-	    p1_left0 p1_left1 \
-	    p2_left0 p2_left1 \
-	    p3_left0 p3_left1 \
-	    p4_left0 p4_left1
-SPRITES_R = monster_right0 monster_right1 \
-	    p1_right0 p1_right1 \
-	    p2_right0 p2_right1 \
-	    p3_right0 p3_right1 \
-	    p4_right0 p4_right1
+SPRITES_SRC = \
+	$(SPRITES:%=c_%_up0.png) \
+	$(SPRITES:%=c_%_up1.png) \
+	$(SPRITES:%=c_%_down0.png) \
+	$(SPRITES:%=c_%_down1.png) \
+	$(SPRITES:%=c_%_left0.png) \
+	$(SPRITES:%=c_%_left1.png) \
+	$(SPRITES:%=c_%_right0.png) \
+	$(SPRITES:%=c_%_right1.png)
 
-SPRITES = $(SPRITES_U) $(SPRITES_D) $(SPRITES_L) $(SPRITES_R)
-
-tiles.s: $(TILES:%=c_%.png) ./tile2s Makefile
-	echo "; tile drawing routines" > $@
+tiles.s: $(TILES:%=c_%.png) $(EXTRA_TILES:%=c_%.png) $(SPRITES_SRC) ./tile2s Makefile
+	echo "; tile bitmaps" > $@
 	echo "" >> $@
 	for t in $(TILES) $(EXTRA_TILES); do \
 		echo "tile_$${t}_a" >> $@; \
 		./tile2s -b c_$$t.png >> $@; \
+		echo "" >> $@; \
 		echo "tile_$${t}_b" >> $@; \
 		./tile2s -b -s 4 c_$$t.png >> $@; \
+		echo "" >> $@; \
 	done
-	for s in 0 1 2 3 4 5 6 7 8 9; do \
-		echo "draw_lnum_$$s" >> $@; \
-		./tile2s -i -128 s_lnum_$$s.png >> $@; \
-		echo "	rts" >> $@; \
+	for s in $(SPRITES); do \
+		for d in up down left right; do \
+			for f in 0 1; do \
+				echo "tile_$${s}_$${d}$${f}_a" >> $@; \
+				./tile2s -b c_$${s}_$${d}$${f}.png >> $@; \
+				echo "" >> $@; \
+				echo "tile_$${s}_$${d}$${f}_b" >> $@; \
+				./tile2s -b -s 4 c_$${s}_$${d}$${f}.png >> $@; \
+				echo "" >> $@; \
+			done; \
+		done; \
 	done
-	for s in 1 2 3 4 5 6 7 8 9; do \
-		echo "draw_snum_$$s" >> $@; \
-		./tile2s -i -128 -n s_snum_$$s.png >> $@; \
-		echo "	rts" >> $@; \
-	done
-	for s in key speed weapon; do \
-		echo "draw_s_$$s" >> $@; \
-		./tile2s -i -128 -n s_$$s.png >> $@; \
-		echo "	rts" >> $@; \
-	done
-
-sprites.s: $(SPRITES:%=c_%.png) ./tile2s Makefile
-	echo "; sprite drawing routines" > $@
+	echo "; large digits" >> $@
 	echo "" >> $@
-	for t in $(SPRITES_U); do \
-		echo "draw_$${t}_a2" >> $@; \
-		echo "	leax -fb_w*3,x" >> $@; \
-		echo "draw_$${t}_a1" >> $@; \
-		echo "	leax -fb_w*3,x" >> $@; \
-		echo "draw_$${t}_a0" >> $@; \
-		./tile2s -i -128 -n c_$$t.png >> $@; \
-		echo "	rts" >> $@; \
-		echo "draw_$${t}_b2" >> $@; \
-		echo "	leax -fb_w*3,x" >> $@; \
-		echo "draw_$${t}_b1" >> $@; \
-		echo "	leax -fb_w*3,x" >> $@; \
-		echo "draw_$${t}_b0" >> $@; \
-		./tile2s -i -128 -n -s 4 c_$$t.png >> $@; \
-		echo "	rts" >> $@; \
+	for s in 0 1 2 3 4 5 6 7 8 9; do \
+		echo "tile_lnum_$$s" >> $@; \
+		./tile2s -b s_lnum_$$s.png >> $@; \
+		echo "" >> $@; \
 	done
-	for t in $(SPRITES_D); do \
-		echo "draw_$${t}_a2" >> $@; \
-		echo "	leax fb_w*3,x" >> $@; \
-		echo "draw_$${t}_a1" >> $@; \
-		echo "	leax fb_w*3,x" >> $@; \
-		echo "draw_$${t}_a0" >> $@; \
-		./tile2s -i -128 -n c_$$t.png >> $@; \
-		echo "	rts" >> $@; \
-		echo "draw_$${t}_b2" >> $@; \
-		echo "	leax fb_w*3,x" >> $@; \
-		echo "draw_$${t}_b1" >> $@; \
-		echo "	leax fb_w*3,x" >> $@; \
-		echo "draw_$${t}_b0" >> $@; \
-		./tile2s -i -128 -n -s 4 c_$$t.png >> $@; \
-		echo "	rts" >> $@; \
-	done
-	for t in $(SPRITES_L); do \
-		echo "draw_$${t}_a2" >> $@; \
-		echo "	leax -1,x" >> $@; \
-		echo "draw_$${t}_b1" >> $@; \
-		echo "draw_$${t}_a0" >> $@; \
-		./tile2s -i -128 -n c_$$t.png >> $@; \
-		echo "	rts" >> $@; \
-		echo "draw_$${t}_b2" >> $@; \
-		echo "draw_$${t}_a1" >> $@; \
-		echo "	leax -1,x" >> $@; \
-		echo "draw_$${t}_b0" >> $@; \
-		./tile2s -i -128 -n -s 4 c_$$t.png >> $@; \
-		echo "	rts" >> $@; \
-	done
-	for t in $(SPRITES_R); do \
-		echo "draw_$${t}_a2" >> $@; \
-		echo "draw_$${t}_b1" >> $@; \
-		echo "	leax 1,x" >> $@; \
-		echo "draw_$${t}_a0" >> $@; \
-		./tile2s -i -128 -n c_$$t.png >> $@; \
-		echo "	rts" >> $@; \
-		echo "draw_$${t}_b2" >> $@; \
-		echo "	leax 1,x" >> $@; \
-		echo "draw_$${t}_a1" >> $@; \
-		echo "draw_$${t}_b0" >> $@; \
-		./tile2s -i -128 -n -s 4 c_$$t.png >> $@; \
-		echo "	rts" >> $@; \
+	echo "; small digits" >> $@
+	echo "" >> $@
+	for s in 1 2 3 4 5 6 7 8 9; do \
+		echo "tile_snum_$$s" >> $@; \
+		./tile2s -b s_snum_$$s.png >> $@; \
+		echo "" >> $@; \
 	done
 
-CLEAN += tiles.s sprites.s
+CLEAN += tiles.s
 
 ####
 
 LEVELS = 01 02 03 04 05 06 \
 	07 08 09 10 11 12 \
 	13 14 15 16 17 18 \
-	19 20 21 22 23 24
+	19 20 21 22 23 24 25
 
 LEVELS_S = $(LEVELS:%=level%.s)
 LEVELS_BIN = $(LEVELS:%=level%.bin)
@@ -189,6 +119,9 @@ level%.bin: level%.s
 
 $(LEVELS_S): objects.s
 
+TEXT_SCREENS = select-screen.bin death-screen.bin end-screen.bin
+TEXT_SCREENS_DZ = $(TEXT_SCREENS:%=%.dz)
+
 play-screen.s: play-screen.png ./tile2s
 	./tile2s -b -o $@ $<
 
@@ -196,8 +129,9 @@ play-screen.bin: play-screen.s
 	$(ASM6809) -B -o $@ $<
 
 CLEAN += play-screen.s play-screen.bin play-screen.bin.dz
+CLEAN += $(TEXT_SCREENS_DZ)
 
-dunjunz.bin: dunjunz.s tiles.s sprites.s dunzip.s play-screen.bin.dz $(LEVELS_BIN_DZ)
+dunjunz.bin: dunjunz.s tiles.s dunzip.s play-screen.bin.dz $(TEXT_SCREENS_DZ) $(LEVELS_BIN_DZ)
 	$(ASM6809) -D -e start -l $(<:.s=.lis) -o $@ $<
 CLEAN += dunjunz.lis dunjunz.bin
 
@@ -211,8 +145,8 @@ CLEAN += loading-screen.s loading-screen.bin
 
 dunjunz.cas dunjunz.wav: loading-screen.bin dunjunz.bin
 	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ --eof-data --dzip --fast \
-		-B -l 0x0c00 loading-screen.bin \
-		--vdg 0xf8 --sam-v 6 --sam-f 6 \
+		-B -l 0x0400 loading-screen.bin \
+		--vdg 0xe0 --sam-v 6 --sam-f 2 --flasher \
 		-D dunjunz.bin
 
 CLEAN += dunjunz.cas dunjunz.wav

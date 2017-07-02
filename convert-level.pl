@@ -61,7 +61,7 @@ for my $i (1..21) {
 	my $mi = $y * 32 + $x;
 	next if ($map[$mi] eq '-' || $map[$mi] eq '|');
 	$map[$mi] = ($o == 0x1d) ? '-' : '|';
-	push @{$doors[$y]}, $i;
+	push @{$doors[$y]}, [ $x, $i ];
 }
 
 # keys
@@ -72,7 +72,7 @@ for my $i (1..21) {
 	my $mi = $y * 32 + $x;
 	next if ($map[$mi] eq '-' || $map[$mi] eq '|');
 	$map[$mi] = '~';
-	push @{$keys[$y]}, $i;
+	push @{$keys[$y]}, [ $x, $i ];
 }
 
 # items
@@ -103,10 +103,12 @@ for my $y (0..47) {
 	}
 	if (@{$doors[$y]} || @{$keys[$y]}) {
 		if (@{$doors[$y]}) {
-			print " D:".join(",", @{$doors[$y]});
+			my @d = sort { $a->[0] <=> $b->[0] } @{$doors[$y]};
+			print " D:".join(",", map { $_->[1] } @d);
 		}
 		if (@{$keys[$y]}) {
-			print " K:".join(",", @{$keys[$y]});
+			my @k = sort { $a->[0] <=> $b->[0] } @{$keys[$y]};
+			print " K:".join(",", map { $_->[1] } @k);
 		}
 	}
 	print "\n";

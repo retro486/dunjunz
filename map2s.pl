@@ -39,54 +39,50 @@ for $y (0..47) {
 	}
 	my $bit = 0;
 	for my $x (0..31) {
-		my $pos = $y * 32 + $x;
+		# transformed x,y
+		my $tx = $x & 7;
+		my $ty = (int($x/8) * 48 + $y) - 128;
 		my $m = substr($line, $x, 1);
 		$bit <<= 1;
 		if ($m eq '#') {
 			$bit |= 1;
-			if (($y == 11 || $y == 12) && ($x == 11 || $x == 12)) {
-				# a stone in the starting position should be
-				# recorded as an object so it's redrawn when
-				# player moves off it
-				# XXX maybe not...
-				#push @objects, [ $pos, "stone" ];
-			}
 		} elsif ($m eq '$') {
-			push @objects, [ $pos, "money" ];
+			push @objects, [ $ty, $tx, "money" ];
 		} elsif ($m eq '+') {
-			push @objects, [ $pos, "cross" ];
+			push @objects, [ $ty, $tx, "cross" ];
 		} elsif ($m eq 'M') {
-			push @trapdoors, [ $pos, "trapdoor" ];
+			push @trapdoors, [ $ty, $tx ];
 		} elsif ($m eq ')') {
-			push @objects, [ $pos, "weapon" ];
+			push @objects, [ $ty, $tx, "weapon" ];
 		} elsif ($m eq '?') {
-			push @objects, [ $pos, "power" ];
+			push @objects, [ $ty, $tx, "power" ];
 		} elsif ($m eq ']') {
-			push @objects, [ $pos, "armour" ];
+			push @objects, [ $ty, $tx, "armour" ];
 		} elsif ($m eq '!') {
-			push @objects, [ $pos, "potion" ];
+			push @objects, [ $ty, $tx, "potion" ];
 		} elsif ($m eq '>') {
-			push @objects, [ $pos, "exit" ];
+			push @objects, [ $ty, $tx, "exit" ];
 		} elsif ($m eq '%') {
-			push @objects, [ $pos, "food" ];
+			push @objects, [ $ty, $tx, "food" ];
 		} elsif ($m eq 'X') {
-			push @objects, [ $pos, "tport" ];
+			push @objects, [ $ty, $tx, "tport" ];
 		} elsif ($m eq '^') {
-			push @objects, [ $pos, "drainer" ];
+			push @objects, [ $ty, $tx, "drainer" ];
 		} elsif ($m eq '-') {
 			$bit |= 1;
 			my $dno = shift @line_doors or die "no door id on line $lno\n";
-			$doors[$dno-1] = [ $pos, "door_h" ];
+			$doors[$dno-1] = [ $ty, $tx ];
 		} elsif ($m eq '|') {
 			$bit |= 1;
 			my $dno = shift @line_doors or die "no door id on line $lno\n";
-			$doors[$dno-1] = [ 0x8000 | $pos, "door_v" ];
+			$doors[$dno-1] = [ $ty, 0x80|$tx ];
 		} elsif ($m eq '~') {
 			my $kno = shift @line_keys or die "no key id on line $lno\n";
-			$keys[$kno-1] = [ $pos, "key" ];
+			$keys[$kno-1] = [ $ty, $tx ];
 		}
 		if (($x & 7) == 7) {
-			push @bitmap, $bit;
+			my $idx = int($x/8) * 48 + $y;
+			$bitmap[$idx] = $bit;
 			$bit = 0;
 		}
 	}
@@ -113,76 +109,62 @@ die "too many objects (max 30)\n" if (scalar(@objects) > 30);
 	}
 }
 
-printf "; %d objects\n", scalar(@objects);
-print "\n";
-
-print "level_bitmap\n";
-for my $i (0..191) {
-	print "\tfcb " if (($i & 3) == 0);
-	printf "\%\%\%08b", 0+$bitmap[$i];
-	print "," if (($i & 3) != 3);
-	print "\n" if (($i & 3) == 3);
+while (scalar(@doors) < 20) {
+	push @doors, [ 0x80, 0x80 ];
 }
-print "\n";
+
+while (scalar(@keys) < 20) {
+	push @keys, [ 0x80, 0x80 ];
+}
+
+while (scalar(@objects) < 30) {
+	push @objects, [ 0x80, 0x80, 0x80 ];
+}
 
 # doors
 {
-	print "doors\n";
-	my $i = 0;
-	for my $door (@doors) {
-		printf "\tfdb \$\%04x\n", $door->[0];
-		$i++;
-	}
-	while ($i < 20) {
-		print "\tfdb \$0000\n";
-		$i++;
+	print "level_doors\n";
+	for my $o (@doors) {
+		print "\tfcb ".join(",",@{$o})."\n";
 	}
 	print "\n";
 }
 
 # keys
 {
-	print "keys\n";
-	my $i = 0;
-	for my $key (@keys) {
-		printf "\tfdb \$\%04x\n", $key->[0];
-		$i++;
-	}
-	while ($i < 20) {
-		print "\tfdb \$0000\n";
-		$i++;
+	print "level_keys\n";
+	for my $o (@keys) {
+		print "\tfcb ".join(",",@{$o})."\n";
 	}
 	print "\n";
 }
 
 # trapdoors
 {
-	print "trapdoors\n";
-	my $i = 0;
-	for my $trapdoor (@trapdoors) {
-		printf "\tfdb \$\%04x\n", $trapdoor->[0];
-		$i++;
+	print "level_trapdoors\n";
+	for my $o (@trapdoors) {
+		print "\tfcb ".join(",",@{$o})."\n";
 	}
-	while ($i < 8) {
-		print "\tfdb \$0000\n";
-		$i++;
-	}
+	# always 8 trapdoors, no need to pad
 	print "\n";
 }
 
 # objects
 {
-	print "objects\n";
-	my $i = 0;
-	for my $object (@objects) {
-		my ($pos, $name) = @{$object};
-		printf "\tfdb \$\%04x\n", $pos;
-		printf "\tfcb \%s\n", $name;
-		$i++;
-	}
-	while ($i < 30) {
-		print "\tfdb \$0000\n";
-		print "\tfcb 0\n";
-		$i++;
+	print "level_objects\n";
+	for my $o (@objects) {
+		print "\tfcb ".join(",",@{$o}[2,0,1])."\n";
 	}
 }
+
+print "\n";
+
+print "level_bmap\n";
+for my $i (0..191) {
+	print "\tfcb " if (($i & 3) == 0);
+	printf "\%\%\%08b", 0+$bitmap[$i];
+	print "," if (($i & 3) != 3);
+	print "\n" if (($i & 3) == 3);
+}
+
+print "level_end\n";

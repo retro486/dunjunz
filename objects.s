@@ -1,36 +1,140 @@
-; object types.  multiples of 2, as most will also be used as the offset
-; into various tables: tile rendering, pickup handling
+; Object tiles
 
-next_oid	macro
-\1		equ tileidx
-tileidx		set tileidx+2
+; In general, the obj_tile field of an obj struct, but in many cases just
+; used to index into tile tables.
+
+OBJ_TILE_MULTIPLE	equ 1
+OBJ_PAIR_SIZE	equ OBJ_TILE_MULTIPLE*2
+
+OBJ_PAIR_ALIGN	macro
+		rmb (OBJ_PAIR_SIZE-*%OBJ_PAIR_SIZE)%OBJ_PAIR_SIZE
 		endm
 
-tileidx		set -8
+OBJ_TILE	macro
+		rmb OBJ_TILE_MULTIPLE
+		endm
 
-; OIDs < 0 are blocking
-; OIDs <= 0 are not dereferenced into object structures
-; OIDs < -6 are placeholders, not real objects
+		org -obj_tile_zero_offset
+100
 
-		next_oid "monster"	; -8
+; Doors, drawn only on initial viewport render.  Negative values
+; distinguish them from pickups.
 
-		next_oid "door_v"	; -6
-		next_oid "door_h"	; -4
-		next_oid "stone"	; -2
+door_v		OBJ_TILE
+door_h		OBJ_TILE
 
-		next_oid "floor"	; 0
+obj_tile_zero_offset	equ *-100B
 
-		next_oid "exit"
-		next_oid "trapdoor"
-		next_oid "drainer"
-		next_oid "money"
-		next_oid "food"
-		next_oid "tport"
-		next_oid "power"
-		next_oid "armour"
-		next_oid "potion"
-		next_oid "weapon"
-		next_oid "cross"
-		next_oid "speed"
-		next_oid "key"
+; No object has tile 'floor', but the zero value is used for undrawing.
 
+floor		OBJ_TILE	; == 0
+
+; Normal objects, drawn on initial viewport render.  Only redrawn when
+; undrawing something else.
+
+exit		OBJ_TILE
+trapdoor	OBJ_TILE
+money		OBJ_TILE
+food		OBJ_TILE
+tport		OBJ_TILE
+power		OBJ_TILE
+armour		OBJ_TILE
+potion		OBJ_TILE
+weapon		OBJ_TILE
+cross		OBJ_TILE
+speed		OBJ_TILE
+
+; Normal objects that are redrawn every frame.
+
+always_draw_tile
+
+drainer		OBJ_TILE
+key		OBJ_TILE
+
+; Player graphics.  Not real objects, just used to index into graphics
+; tables.  It's important that *0 and *1 are aligned to an even multiple
+; so that bit twiddling can change which frame is to be drawn.
+
+; Player shots aren't real objects, but are treated as such to redraw
+; every frame.  Like with player tiles, it's important up/down and
+; left/right are aligned to an even multiple so that reversing the
+; direction is a simple bit twiddle (ie, when shots are "reflected" by
+; drainers).
+
+		; ensure pair alignment of following
+		OBJ_PAIR_ALIGN
+
+p1_base_tile
+p1_up0		OBJ_TILE
+p1_up1		OBJ_TILE
+p1_down0	OBJ_TILE
+p1_down1	OBJ_TILE
+p1_left0	OBJ_TILE
+p1_left1	OBJ_TILE
+p1_right0	OBJ_TILE
+p1_right1	OBJ_TILE
+arrow_up	OBJ_TILE
+arrow_down	OBJ_TILE
+arrow_left	OBJ_TILE
+arrow_right	OBJ_TILE
+
+p2_base_tile
+p2_up0		OBJ_TILE
+p2_up1		OBJ_TILE
+p2_down0	OBJ_TILE
+p2_down1	OBJ_TILE
+p2_left0	OBJ_TILE
+p2_left1	OBJ_TILE
+p2_right0	OBJ_TILE
+p2_right1	OBJ_TILE
+fball_up	OBJ_TILE
+fball_down	OBJ_TILE
+fball_left	OBJ_TILE
+fball_right	OBJ_TILE
+
+p3_base_tile
+p3_up0		OBJ_TILE
+p3_up1		OBJ_TILE
+p3_down0	OBJ_TILE
+p3_down1	OBJ_TILE
+p3_left0	OBJ_TILE
+p3_left1	OBJ_TILE
+p3_right0	OBJ_TILE
+p3_right1	OBJ_TILE
+axe_up		OBJ_TILE
+axe_down	OBJ_TILE
+axe_left	OBJ_TILE
+axe_right	OBJ_TILE
+
+p4_base_tile
+p4_up0		OBJ_TILE
+p4_up1		OBJ_TILE
+p4_down0	OBJ_TILE
+p4_down1	OBJ_TILE
+p4_left0	OBJ_TILE
+p4_left1	OBJ_TILE
+p4_right0	OBJ_TILE
+p4_right1	OBJ_TILE
+sword_up	OBJ_TILE
+sword_down	OBJ_TILE
+sword_left	OBJ_TILE
+sword_right	OBJ_TILE
+
+monster_base_tile
+monster_up0	OBJ_TILE
+monster_up1	OBJ_TILE
+monster_down0	OBJ_TILE
+monster_down1	OBJ_TILE
+monster_left0	OBJ_TILE
+monster_left1	OBJ_TILE
+monster_right0	OBJ_TILE
+monster_right1	OBJ_TILE
+
+bones0		OBJ_TILE
+bones1		OBJ_TILE
+bones2		OBJ_TILE
+bones3		OBJ_TILE
+bones4		OBJ_TILE
+bones5		OBJ_TILE
+bones6		OBJ_TILE
+bones7		OBJ_TILE
