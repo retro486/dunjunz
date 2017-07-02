@@ -63,6 +63,8 @@ for $y (0..47) {
 			push @objects, [ $pos, "power" ];
 		} elsif ($m eq ']') {
 			push @objects, [ $pos, "armour" ];
+		} elsif ($m eq '!') {
+			push @objects, [ $pos, "potion" ];
 		} elsif ($m eq '>') {
 			push @objects, [ $pos, "exit" ];
 		} elsif ($m eq '%') {

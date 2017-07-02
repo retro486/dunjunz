@@ -44,8 +44,8 @@ STONES = \
 	stone21 \
 	stone25
 
-SPRITES_U = monster_up0 monster_up1 p1_up0 p3_up0 p3_up1
-SPRITES_D = monster_down0 monster_down1 p1_down0 p3_down0 p3_down1
+SPRITES_U = monster_up0 monster_up1 p1_up0 p3_up0 p3_up1 p4_up0 p4_up1
+SPRITES_D = monster_down0 monster_down1 p1_down0 p3_down0 p3_down1 p4_down0 p4_down1
 SPRITES_L = monster_left0 monster_left1 p3_left0
 SPRITES_R = monster_right0 monster_right1 p3_right0
 
@@ -55,12 +55,10 @@ tiles.s: $(TILES:%=c_%.png) ./tile2s Makefile
 	echo "; tile drawing routines" > $@
 	echo "" >> $@
 	for t in $(TILES) $(EXTRA_TILES); do \
-		echo "draw_$${t}_a" >> $@; \
-		./tile2s -i -128 -n c_$$t.png >> $@; \
-		echo "	rts" >> $@; \
-		echo "draw_$${t}_b" >> $@; \
-		./tile2s -i -128 -n -s 4 c_$$t.png >> $@; \
-		echo "	rts" >> $@; \
+		echo "tile_$${t}_a" >> $@; \
+		./tile2s -b c_$$t.png >> $@; \
+		echo "tile_$${t}_b" >> $@; \
+		./tile2s -b -s 4 c_$$t.png >> $@; \
 	done
 	for s in 0 1 2 3 4 5 6 7 8 9; do \
 		echo "draw_lnum_$$s" >> $@; \
@@ -191,8 +189,8 @@ play-screen.bin: play-screen.s
 
 CLEAN += play-screen.s play-screen.bin play-screen.bin.dz
 
-dunjunz.bin: AFLAGS = -D
-dunjunz.bin: tiles.s sprites.s dunzip.s play-screen.bin.dz $(LEVELS_BIN)
+dunjunz.bin: dunjunz.s tiles.s sprites.s dunzip.s play-screen.bin.dz $(LEVELS_BIN)
+	$(ASM6809) -D -e start -l $(<:.s=.lis) -o $@ $<
 CLEAN += dunjunz.lis dunjunz.bin
 
 loading-screen.s: loading-screen.png ./tile2s
@@ -210,6 +208,16 @@ dunjunz.cas dunjunz.wav: loading-screen.bin dunjunz.bin
 		-D dunjunz.bin
 
 CLEAN += dunjunz.cas dunjunz.wav
+
+####
+
+dunjunz.shtml: dunjunz.head.html dunjunz.body.html dunjunz.foot.html
+	cat dunjunz.head.html dunjunz.body.html dunjunz.foot.html > $@
+
+dunjunz.body.html: dunjunz.md
+	pandoc -t html5 -o $@ $<
+
+CLEAN += dunjunz.body.html
 
 ####
 

@@ -14,9 +14,9 @@ tileidx		set -8
 
 		next_oid "monster"	; -8
 
-		next_oid "door_v"	; - 6
-		next_oid "door_h"	; - 4
-		next_oid "stone"	; - 2
+		next_oid "door_v"	; -6
+		next_oid "door_h"	; -4
+		next_oid "stone"	; -2
 
 		next_oid "floor"	; 0
 

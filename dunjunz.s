@@ -38,7 +38,7 @@
 		include	"dragonhw.s"
 		include "objects.s"
 
-fb0		equ $0c00	; framebuffer base
+fb0		equ $0400	; framebuffer base
 fb_w		equ 32		; framebuffer line width
 fb_h		equ 192		; framebuffer height
 sizeof_fb	equ fb_w*fb_h
@@ -101,20 +101,11 @@ max_monsters	equ 24		; needn't all be active at once
 ; position.
 
 		org 0
-obj_room	rmb 2
+obj_pos		rmb 2
 obj_type	rmb 1
 obj_voff	rmb 2		; precalc viewport offset
 obj_render	rmb 2		; render function
-obj_data	rmb 1
-obj_link	rmb 1
 sizeof_object
-
-; object data (and sometimes link) used for different purposes depending
-; on object type:
-
-obj_door_id	equ obj_data	; key: index of door it opens
-obj_drainer_hp	equ obj_data	; hits remaining until destroyed
-obj_tport_dest	equ obj_data	; teleport destination tile
 
 facing_up	equ 0
 facing_down	equ 2
@@ -129,36 +120,39 @@ sprite_moveoff	rmb 1	; offset to add to move in facing direction
 
 sprite_set	rmb 2	; const base of all direction sprites
 
-sprite_vp_off	rmb 2	; offset into viewport to draw sprite
+sprite_voff	rmb 2	; offset into viewport to draw sprite
 sprite_render	rmb 2	; points to set of three pointers to sprites
 sprite_undraw	rmb 2	; draw routine for covered item
-sprite_covering	rmb 1	; tile to restore when sprite moves in map
 
 sprite_room	rmb 2	; pointer to top-left of current room
 sprite_pos	rmb 2	; pointer to sprite's position in map
-
-sprite_state	rmb 1	; depends on type of sprite
+sprite_next_pos	rmb 2
 
 sprite_offset	equ 100B-*
 
 sprite_hp	rmb 1	; -ve = sprite inactive (e.g. dead player)
 
-sprite_next_room
+sprite_state	rmb 1	; depends on type of sprite
+
+sprite_undraw_room
 		rmb 2
-sprite_next_pos	rmb 2
 
 sizeof_sprite	equ *-sprite_offset
 
+; - - -
+
 		org sprite_offset
 		rmb sizeof_sprite
-;monster_dir	rmb 1
-;monster_mcount	rmb 1
 sizeof_monster	equ *-sprite_offset
+
+; - - -
 
 		org sprite_offset
 		rmb sizeof_sprite
 plr_stat_win	rmb 2	; pointer to stats window
+plr_vp		rmb 2	; pointer to viewport
 
+plr_moving	rmb 1	; non-zero = move in direction from sprite_facing
 plr_armour	rmb 1
 plr_power	rmb 1
 plr_ammo	rmb 1
@@ -167,6 +161,8 @@ plr_speed	rmb 1
 plr_score2	rmb 1
 plr_score0	rmb 1
 sizeof_player	equ *-sprite_offset
+
+; - - -
 
 ; player defaults
 
@@ -180,7 +176,10 @@ plr_dfl_spriteset
 		rmb 2
 plr_dfl_stat_win
 		rmb 2
+plr_dfl_vp	rmb 2
 sizeof_player_defaults
+
+; - - -
 
 ; trapdoors let monsters through, they're constant background tiles, but
 ; we also keep a list of their positions to iterate over quickly.
@@ -190,17 +189,15 @@ trapdoor_pos	rmb 2
 trapdoor_voff	rmb 2
 sizeof_trapdoor
 
-		org $0080
-		setdp $00
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-player1		equ *-sprite_offset
-		rmb sizeof_player
-player2		equ *-sprite_offset
-		rmb sizeof_player
-player3		equ *-sprite_offset
-		rmb sizeof_player
-player4		equ *-sprite_offset
-		rmb sizeof_player
+; Direct page variables
+
+; Trying to keep player sprites here for now, as there are plenty of
+; places where we manipulate them directly rather than as offsets into the
+; player struct.
+
+		org $0002
 
 level		rmb 1
 
@@ -211,13 +208,25 @@ tmp0		rmb 2
 tmp1		rmb 2
 tmp2		rmb 2
 
+; Avoid the soft reset flag/vector
+
+		org $0080
+		setdp $00
+
+players		equ *-sprite_offset
+player1		equ *-sprite_offset
+		rmb sizeof_player
+player2		equ *-sprite_offset
+		rmb sizeof_player
+player3		equ *-sprite_offset
+		rmb sizeof_player
+player4		equ *-sprite_offset
+		rmb sizeof_player
+players_end	equ *-sprite_offset
+
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-		org $2400
-
-		jmp game_setup
-
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+		org fb0_top
 
 mainloop
 
@@ -227,46 +236,39 @@ mainloop
 		adda #16
 		beq 10F
 		bvc 30F
-		ldx #draw_drainer0_a
-		ldu #draw_drainer0_b
+		ldx #tile_drainer0_a
+		ldu #tile_drainer0_b
 		bra 20F
-10		ldx #draw_drainer1_a
-		ldu #draw_drainer1_b
+10		ldx #tile_drainer1_a
+		ldu #tile_drainer1_b
 20		stx mod_drainer_a
 		stu mod_drainer_b
 30		sta anim_count
 
-		; render all player windows
-		ldu #player1
-		ldx #vp1+128
-		jsr render_window
-		ldu #player2
-		ldx #vp2+128
-		jsr render_window
-		ldu #player3
-		ldx #vp3+128
-		jsr render_window
-		ldu #player4
-		ldx #vp4+128
-		jsr render_window
-
 		; spawn new monsters
 		jsr new_monster
+
+		bsr draw_objects
 		; move the existing ones
 		jsr process_monsters
 
 		jsr scan_controls
+		jsr process_players
 
 		lda player1+sprite_hp
+		inca
 		bne 99F
 		lda player2+sprite_hp
+		inca
 		bne 99F
 		lda player3+sprite_hp
+		inca
 		bne 99F
 		lda player4+sprite_hp
+		inca
 		beq game_over
 
-99		jmp mainloop
+99		bra mainloop
 
 game_over
 		jmp [$bffe]
@@ -279,95 +281,199 @@ game_over
 ;     u -> player struct
 ; uses: tmp0, tmp1
 
-render_window
-		lda sprite_state,u
-		bmi draw_objects
-		deca
-		sta sprite_state,u
-		beq update_window
-		ldd sprite_next_room,u
-		std sprite_room,u
-		rts
-
 		; draw player window
 		; only draws static tiles: floor, stone, doors
 
-update_window
-		ldu sprite_next_room,u
+plr_draw_room
+		ldx plr_vp,u
+		ldd sprite_next_pos,u
+		andb #$18
+		tfr d,y
 		lda #vp_tiles_h
 		sta tmp1
+		pshs u
 yloop
-		ldb #vp_tiles_w/2
+		lda #vp_tiles_w/2
+		sta tmp1+1
 xloop
 		; even tiles
-		lda ,u+
+		lda ,y+
 		beq 10F
-		cmpa #door_v
-		blo 20F
-10		pshs b,x,u
-		ldu #tiles_a
-		jsr [a,u]
-		puls b,x,u
+		bpl 20F
+10		jsr single_tile_a
 
 		; odd tiles
 20		leax 1,x
-		lda ,u+
+		lda ,y+
 		; only render static tiles
 		beq 30F
-		cmpa #door_v
-		blo 40F
-30		pshs b,x,u
-		ldu #tiles_b
-		jsr [a,u]
-		puls b,x,u
+		bpl 40F
+30
+		jsr single_tile_b
 
 40		leax 2,x
-		decb
+		dec tmp1+1
 		bne xloop
 		leax (9*fb_w)-12,x
-		leau map_w-vp_tiles_w,u
+		leay map_w-vp_tiles_w,y
 		dec tmp1
 		bne yloop
-		rts
+		puls u
+		jmp plr_inc_state
 
 draw_objects
 		ldu #objects
 10		lda obj_type,u
 		beq 50F
-		ldd obj_room,u
-		cmpd player1+sprite_room
-		bne 20F
-		ldd obj_voff,u
-		ldx #vp1+128
-		leax d,x
-		jsr [obj_render,u]
-		ldd obj_room,u
-20		cmpd player2+sprite_room
-		bne 30F
-		ldd obj_voff,u
-		ldx #vp2+128
-		leax d,x
-		jsr [obj_render,u]
-		ldd obj_room,u
-30		cmpd player3+sprite_room
-		bne 40F
-		ldd obj_voff,u
-		ldx #vp3+128
-		leax d,x
-		jsr [obj_render,u]
-		ldd obj_room,u
-40		cmpd player4+sprite_room
-		bne 50F
-		ldd obj_voff,u
-		ldx #vp4+128
-		leax d,x
 		jsr [obj_render,u]
 50		leau sizeof_object,u
 		cmpu #objects_end
 		blo 10B
 		rts
 
+DRAW_ROW_A	macro
+		clra
+		ldb (\1+1),x
+		andb #$0f
+		addd ,u++
+		std \1,x
+		endm
+
+DRAW_LAST_ROW_A	macro
+		clra
+		ldb (\1+1),x
+		andb #$0f
+		addd ,u
+		std \1,x
+		endm
+
+DRAW_ROW_B	macro
+		lda \1,x
+		clrb
+		anda #$f0
+		addd ,u++
+		std \1,x
+		endm
+
+DRAW_LAST_ROW_B	macro
+		lda \1,x
+		clrb
+		anda #$f0
+		addd ,u
+		std \1,x
+		endm
+
+		; u -> object
+draw_object_a
+		ldd obj_pos,u
+		andb #$18
+		tfr d,y
+		lda obj_type,u
+		ldx obj_voff,u
+		; fall through
+
+		; a = tile id
+		; x = vp offset
+		; y = room
+draw_tile_a	
+		pshs x,u
+		ldu #tiles_a
+		ldu a,u
+		stu tmp2
+		cmpy player1+sprite_room
+		bne 10F
+		leax vp1+128,x
+		bsr 100F
+10		cmpy player2+sprite_room
+		bne 20F
+		ldx ,s
+		leax vp2+128,x
+		ldu tmp2
+		bsr 100F
+20		cmpy player3+sprite_room
+		bne 30F
+		ldx ,s
+		leax vp3+128,x
+		ldu tmp2
+		bsr 100F
+30		cmpy player4+sprite_room
+		bne 40F
+		ldx ,s
+		leax vp4+128,x
+		ldu tmp2
+		bsr 100F
+40		puls x,u,pc
+single_tile_a	ldu #tiles_a
+		ldu a,u
+100		DRAW_ROW_A -128
+		DRAW_ROW_A -96
+		DRAW_ROW_A -64
+		DRAW_ROW_A -32
+		DRAW_ROW_A 0
+		DRAW_ROW_A 32
+		DRAW_ROW_A 64
+		DRAW_ROW_A 96
+		DRAW_LAST_ROW_A 128
+		rts
+
+		; u -> object
+draw_object_b
+		ldd obj_pos,u
+		andb #$18
+		tfr d,y
+		lda obj_type,u
+		ldx obj_voff,u
+		; fall through
+
+		; a = tile id
+		; x = vp offset
+		; y = room
+draw_tile_b
+		pshs x,u
+		ldu #tiles_b
+		ldu a,u
+		stu tmp2
+		cmpy player1+sprite_room
+		bne 10F
+		leax vp1+128,x
+		bsr 100F
+10		cmpy player2+sprite_room
+		bne 20F
+		ldx ,s
+		leax vp2+128,x
+		ldu tmp2
+		bsr 100F
+20		cmpy player3+sprite_room
+		bne 30F
+		ldx ,s
+		leax vp3+128,x
+		ldu tmp2
+		bsr 100F
+30		cmpy player4+sprite_room
+		bne 40F
+		ldx ,s
+		leax vp4+128,x
+		ldu tmp2
+		bsr 100F
+40		puls x,u,pc
+single_tile_b	ldu #tiles_b
+		ldu a,u
+100		DRAW_ROW_B -128
+		DRAW_ROW_B -96
+		DRAW_ROW_B -64
+		DRAW_ROW_B -32
+		DRAW_ROW_B 0
+		DRAW_ROW_B 32
+		DRAW_ROW_B 64
+		DRAW_ROW_B 96
+		DRAW_LAST_ROW_B 128
+		rts
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 ; initialise game for starting from level 1
+
+start		; binray start address
 
 game_setup
 
@@ -388,7 +494,7 @@ game_setup
 reset_hook	nop
 
 		orcc #$50
-		lds #$0600
+		lds #$0400
 		; XXX 64K mode for testing.  I hope to get everything
 		; within 32K.
 		sta $ffdf
@@ -410,10 +516,10 @@ reset_hook	nop
 		sta reg_sam_v0c
 		sta reg_sam_v1s
 		sta reg_sam_v2s
-		; SAM display offset = $0c00
+		; SAM display offset = $0400
 		sta reg_sam_f0c
 		sta reg_sam_f1s
-		sta reg_sam_f2s
+		sta reg_sam_f2c
 		; VDG mode = CG6, CSS0
 		lda #$e2
 		sta reg_pia1_pdrb
@@ -575,18 +681,16 @@ place_object
 		stb ,x		; store oid in map
 		bsr object_ptr	; y -> object
 		sta obj_type,y
-		ldx #tiles_a
+		ldx #draw_object_a
 		ldb 1,s
 		lsrb
 		bcc 10F
-		ldx #tiles_b
-10		ldx a,x
-		stx obj_render,y
+		ldx #draw_object_b
+10		stx obj_render,y
 		ldd ,s
-		andb #$18
-		std obj_room,y
+		std obj_pos,y
 		ldd ,s
-		bsr pos_to_vp_off
+		bsr pos_to_voff
 		std obj_voff,y
 		puls x,pc
 
@@ -599,7 +703,7 @@ object_ptr	pshs a,b,x
 		leay d,x
 		puls a,b,x,pc
 
-pos_to_vp_off
+pos_to_voff
 		pshs x
 		lslb
 		rola
@@ -624,7 +728,7 @@ pos_to_vp_off
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 ; set up player.  if player is dead, restore default stats and clear
-; score.  always restore to 99 health.  falls through to check_pickups.
+; score.  always restore to 99 health.
 
 ; entry:
 ;     u -> player struct
@@ -635,11 +739,13 @@ player_setup
 		std sprite_set,u
 		ldd plr_dfl_stat_win,y
 		std plr_stat_win,u
+		ldd plr_dfl_vp,y
+		std plr_vp,u
 		ldd plr_dfl_pos,y
-		addd #leveldata		; index into map
-		std sprite_pos,u
-		andb #$18
-		std sprite_next_room,u
+		std sprite_next_pos,u
+		lda #1
+		sta sprite_undraw_room,u
+		clr sprite_room,u	; no "current" room
 		clr plr_key,u		; no key
 		clr plr_speed,u		; no speedyboots
 		lda sprite_hp,u
@@ -656,35 +762,10 @@ player_setup
 		sta sprite_hp,u
 		lda plr_dfl_facing,y
 		sta sprite_facing,u
-		decb
+		clr plr_moving,y
+		ldb #state_plr_draw_room
 		stb sprite_state,u
-		; fall through
-
-; check player against map for pickups, keys, etc.  don't call this every
-; loop, only when a player first enters a map square.
-
-; entry:
-;     u -> player struct
-
-check_pickups
-		ldx sprite_pos,u
-		lda ,x
-		beq 10F			; floor - no action
-10		ldb #$fe		; blocking tile
-		;stb ,x
-
-		; check if player window need redrawn
-		ldx #player1
-		ldd sprite_pos,u
-		andb #$18
-		cmpd sprite_room,u
-		beq 20F
-		std sprite_next_room,u
-		lda #1
-		sta sprite_state,u
-		sta sprite_room,u	; invalidate
-20
-		rts
+20		rts
 
 		; check player keys in order: magic, up, down, right, left,
 		; fire.  only one key at a time!  i think in the case of
@@ -700,13 +781,13 @@ scan_controls
 		lda #$ff
 		tfr a,dp
 		setdp $ff
-		sta reg_pia0_pdrb
 
 		; player 1 - (C), W, S, X, Z, (Q)
-		ldu #player1
-		lda sprite_state,u
-		bpl 90F
-		ldx sprite_pos,u
+		lda player1+sprite_state
+		beq 1F
+		cmpa #state_plr_landed
+		bne 90F
+1		clr player1+plr_moving
 		; p1 magic: 'C'
 		ldd #$f704
 		sta reg_pia0_pdrb
@@ -719,40 +800,28 @@ scan_controls
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra
 		bne 10F
-		leax -map_w,x
-		cmpx #leveldata
-		blo 90F
+		lda #facing_up
 		bra 80F
 		; p1 down: 'S'
 10		ldd #$f710
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra
 		bne 20F
-		leax map_w,x
-		cmpx #leveldata_end
-		bhs 90F
+		lda #facing_down
 		bra 80f
 		; p1 right: 'X'
 20		ldd #$fe20
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra
 		bne 30F
-		tfr x,d
-		andb #$1f
-		cmpb #24
-		bhs 90F
-		leax 1,x
+		lda #facing_right
 		bra 80F
 		; p1 left: 'Z'
 30		ldd #$fb20
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra
 		bne 40F
-		tfr x,d
-		andb #$1f
-		cmpb #$08
-		blo 90F
-		leax -1,x
+		lda #facing_left
 		bra 80F
 		; p1 fire: 'Q'
 40		ldd #$fd10
@@ -761,17 +830,18 @@ scan_controls
 		bne 90F
 		; XXX p1 pressed fire
 		bra 90F
-
 80
-		stx sprite_pos,u
-		jsr check_pickups
+		sta player1+sprite_facing
+		inca
+		sta player1+plr_moving
 90
 
 		; player 2 - (@), P, L, K, J, (H)
-		ldu #player2
-		lda sprite_state,u
-		bpl 90F
-		ldx sprite_pos,u
+		lda player2+sprite_state
+		beq 1F
+		cmpa #state_plr_landed
+		bne 90F
+1		clr player2+plr_moving
 		; p2 magic: 'H'
 		ldd #$fe08
 		sta reg_pia0_pdrb
@@ -784,40 +854,28 @@ scan_controls
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra
 		bne 10F
-		leax -map_w,x
-		cmpx #leveldata
-		blo 90F
+		lda #facing_up
 		bra 80F
 		; p2 down: 'L'
 10		ldd #$ef08
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra
 		bne 20F
-		leax map_w,x
-		cmpx #leveldata_end
-		bhs 90F
+		lda #facing_down
 		bra 80f
 		; p2 right: 'K'
 20		ldd #$f708
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra
 		bne 30F
-		tfr x,d
-		andb #$1f
-		cmpb #24
-		bhs 90F
-		leax 1,x
+		lda #facing_right
 		bra 80F
 		; p2 left: 'J'
 30		ldd #$fb08
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra
 		bne 40F
-		tfr x,d
-		andb #$1f
-		cmpb #$08
-		blo 90F
-		leax -1,x
+		lda #facing_left
 		bra 80F
 		; p2 fire: '@'
 40		ldd #$fe04
@@ -826,10 +884,10 @@ scan_controls
 		bne 90F
 		; XXX p2 pressed fire
 		bra 90F
-
 80
-		stx sprite_pos,u
-		jsr check_pickups
+		sta player2+sprite_facing
+		inca
+		sta player2+plr_moving
 90
 
 		; disable sound mux
@@ -837,10 +895,11 @@ scan_controls
 		sta reg_pia1_crb
 
 		; player 3 - left joystick
-		ldu #player3
-		lda sprite_state,u
-		bpl 90F
-		ldx sprite_pos,u
+		lda player3+sprite_state
+		beq 1F
+		cmpa #state_plr_landed
+		bne 90F
+1		clr player3+plr_moving
 		ldd #$3d34
 		sta reg_pia0_crb	; left joystick
 		stb reg_pia0_cra	; x axis
@@ -848,86 +907,69 @@ scan_controls
 		sta reg_pia1_pdra
 		lda reg_pia0_pdra	; left?
 		bmi 10F
-		tfr x,d
-		andb #$1f
-		cmpb #8
-		blo 90F
-		leax -1,x
+		lda #facing_left
 		bra 80F
 10		ldd #$ffc0
 		sta reg_pia1_pdra
 		stb reg_pia1_pdra
 		lda reg_pia0_pdra	; right?
 		bpl 20F
-		tfr x,d
-		andb #$1f
-		cmpb #24
-		bhs 90F
-		leax 1,x
+		lda #facing_right
 		bra 80F
 20		lda #$3c
 		sta reg_pia0_cra	; y axis
 		lda reg_pia0_pdra	; down?
 		bpl 30F
-		leax map_w,x
-		cmpx #leveldata_end
-		bhs 90F
+		lda #facing_down
 		bra 80F
 30		neg reg_pia1_pdra
 		lda reg_pia0_pdra	; up?
 		bmi 90F
-		leax -map_w,x
-		cmpx #leveldata
-		blo 90F
+		lda #facing_up
+		bra 80F
 80
-		stx sprite_pos,u
-		jsr check_pickups
+		sta player3+sprite_facing
+		inca
+		sta player3+plr_moving
 90
 
 		; player 4 - right joystick
-		ldu #player4
-		lda sprite_state,u
-		bpl 90F
-		ldx sprite_pos,u
+		lda player4+sprite_state
+		beq 1F
+		cmpa #state_plr_landed
+		bne 90F
+1		clr player4+plr_moving
 		ldd #$353c
 		sta reg_pia0_crb	; right joystick
 		stb reg_pia0_cra	; y axis
+		lda #$20
+		sta reg_pia1_pdra
 		lda reg_pia0_pdra	; up?
 		bmi 10F
-		leax -map_w,x
-		cmpx #leveldata
-		blo 90F
+		lda #facing_up
 		bra 80F
 10		ldd #$ffc0
 		sta reg_pia1_pdra
 		stb reg_pia1_pdra
 		lda reg_pia0_pdra	; down?
 		bpl 20F
-		leax map_w,x
-		cmpx #leveldata_end
-		bhs 90F
+		lda #facing_down
 		bra 80F
 20		lda #$34
 		sta reg_pia0_cra	; x axis
 		lda reg_pia0_pdra	; right?
 		bpl 30F
-		tfr x,d
-		andb #$1f
-		cmpb #24
-		bhs 90F
-		leax 1,x
+		lda #facing_right
 		bra 80F
 30		neg reg_pia1_pdra
 		lda reg_pia0_pdra	; left?
 		bmi 90F
-		tfr x,d
-		andb #$1f
-		cmpb #8
-		blo 90F
-		leax -1,x
+		lda #facing_left
+		bra 80F
 80
-		stx sprite_pos,u
-		jsr check_pickups
+		sta player4+sprite_facing
+		inca
+		sta player4+plr_moving
 90
 
 		; re-enable sound mux
@@ -947,8 +989,19 @@ scan_controls
 		; u -> player
 		; y -> object
 player_teleport
-		ldd obj_tport_dest,y
-		std sprite_pos,u
+		ldx obj_pos,y
+10		leay sizeof_object,y
+		cmpy #objects_end
+		blo 20F
+		ldy #items	; #objects
+20		lda obj_type,y
+		cmpa #tport
+		bne 10B
+		cmpx obj_pos,y
+		beq 30F
+		ldx obj_pos,y
+30		leax -map_w,x
+		stx sprite_pos,u
 		rts
 
 plr_draw_armour	ldx plr_stat_win,u
@@ -1032,37 +1085,41 @@ plr_draw_ammo	ldx plr_stat_win,u
 30		rts
 
 player1_defaults
-		fdb $016b		; plr_dfl_pos
+		fdb leveldata+$016b	; plr_dfl_pos
 		fcb facing_up		; plr_dfl_facing
 		fcb 3			; plr_dfl_armour
 		fcb 2			; plr_dfl_power
 		fcb 3			; plr_dfl_ammo
 		fdb spriteset_p1	; plr_dfl_spriteset
 		fdb stat_win1		; plr_dfl_stat_win
+		fdb vp1+128		; plr_dfl_vp
 player2_defaults
-		fdb $016c		; plr_dfl_pos
+		fdb leveldata+$016c	; plr_dfl_pos
 		fcb facing_down		; plr_dfl_facing
 		fcb 1			; plr_dfl_armour
 		fcb 3			; plr_dfl_power
 		fcb 2			; plr_dfl_ammo
 		fdb spriteset_p2	; plr_dfl_spriteset
 		fdb stat_win2		; plr_dfl_stat_win
+		fdb vp2+128		; plr_dfl_vp
 player3_defaults
-		fdb $018b		; plr_dfl_pos
+		fdb leveldata+$018b	; plr_dfl_pos
 		fcb facing_right	; plr_dfl_facing
 		fcb 4			; plr_dfl_armour
 		fcb 9			; plr_dfl_power
 		fcb 1			; plr_dfl_ammo
 		fdb spriteset_p3	; plr_dfl_spriteset
 		fdb stat_win3		; plr_dfl_stat_win
+		fdb vp3+128		; plr_dfl_vp
 player4_defaults
-		fdb $018c		; plr_dfl_pos
+		fdb leveldata+$018c	; plr_dfl_pos
 		fcb facing_left		; plr_dfl_facing
 		fcb 6			; plr_dfl_armour
 		fcb 5			; plr_dfl_power
 		fcb 2			; plr_dfl_ammo
 		fdb spriteset_p4	; plr_dfl_spriteset
 		fdb stat_win4		; plr_dfl_stat_win
+		fdb vp4+128		; plr_dfl_vp
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1075,25 +1132,21 @@ next_td		equ *+1
 		ldy #trapdoors
 10		sty next_td
 		ldu #monsters
-40		lda sprite_hp,u
-		bmi 50F
+20		lda sprite_hp,u
+		bmi 30F
 		leau sizeof_monster,u
 		cmpu #monsters_end
-		blo 40B
+		blo 20B
 		rts
-50		lda #9
+30		lda #9
 		sta sprite_hp,u
-		ldx trapdoor_pos,y
-		lda ,x
-		sta sprite_covering,u
-		tfr x,d
+		ldd trapdoor_pos,y
 		std sprite_pos,u
 		andb #$18
 		std sprite_room,u
-		std sprite_next_room,u
 		ldd trapdoor_pos,y
-		jsr pos_to_vp_off
-		std sprite_vp_off,u
+		jsr pos_to_voff
+		std sprite_voff,u
 		ldd #spriteset_mon
 		std sprite_set,u
 		; fall through
@@ -1133,59 +1186,71 @@ sprite_set_render
 		beq 20F
 		leax 12,x
 20		stx sprite_render,u
+		ldd sprite_room,u
+		std sprite_undraw_room,u
 		rts
 
-mon_st2_check_direction
+mon_check_direction
 		ldx sprite_pos,u
 		ldb sprite_moveoff,u
 		leax b,x
+		cmpx player1+sprite_pos
+		beq 30F
+		cmpx player2+sprite_pos
+		beq 30F
+		cmpx player3+sprite_pos
+		beq 30F
+		cmpx player4+sprite_pos
+		beq 30F
+		ldy #players
+10		cmpx sprite_pos,y
+		beq 30F
+		leay sizeof_player,y
+		cmpy #players_end
+		blo 10B
+		ldy #monsters
+20		cmpx sprite_pos,y
+		beq 30F
+		leay sizeof_monster,y
+		cmpy #monsters_end
+		blo 20B
 		lda ,x
-		bpl 10F
-		bsr mon_change_direction
+		bpl 40F
+30		bsr mon_change_direction
 		ldy [sprite_render,u]
 		bsr draw_sprite
 		bra next_monster
-10		stx sprite_next_pos,u
+40		stx sprite_next_pos,u
 		tfr x,d
 		andb #$18
-		std sprite_next_room,u
 		cmpd sprite_room,u
-		beq 20F
+		beq 50F
 		bsr sprite_set_render
 		lda #12
 		bra mon_set_state
-20		bsr sprite_set_render
-		;ldy [sprite_render,u]
-		;bsr draw_sprite
+50		bsr sprite_set_render
 		bra mon_inc_state
 
-mon_st10_landed
-		lda sprite_covering,u
-		cmpa #door_v
-		blt 10F
-		ldx sprite_pos,u
-		sta ,x
-10		ldd sprite_next_pos,u
+mon_landed
+		jsr undraw_sprite
+		ldd sprite_next_pos,u
 		std sprite_pos,u
 		andb #$18
 		std sprite_room,u
 		ldd sprite_pos,u
-		jsr pos_to_vp_off
-		std sprite_vp_off,u
-		ldx sprite_pos,u	; god how many times?!
-		lda ,x
-		sta sprite_covering,u
-		lda #monster
-		sta ,x
+		jsr pos_to_voff
+		std sprite_voff,u
 		clr sprite_state,u
+		; fall through
 
-mon_st0_centred
-		bsr sprite_set_render
+mon_centred
+		jsr sprite_set_render
 		ldy [sprite_render,u]
 		bsr draw_sprite
 		bra mon_inc_state
 
-mon_st4_move1
+mon_move1
+		bsr undraw_sprite
 		ldx sprite_render,u
 		ldy 2,x
 		bsr draw_sprite
@@ -1209,53 +1274,276 @@ mon_inc_state	lda sprite_state,u
 mon_delay	adda #2
 		bra mon_set_state
 
-mon_st8_move2
+mon_move2
+		bsr undraw_sprite
 		ldx sprite_render,u
 		ldy 4,x
 		bsr draw_sprite
 		bra mon_inc_state
 
 draw_sprite
-		ldd sprite_next_room,u
+		ldd sprite_next_pos,u
+		andb #$18
 		cmpd player1+sprite_room
 		bne 20F
-		ldx sprite_vp_off,u
+		ldx sprite_voff,u
 		leax vp1+128,x
 		jsr ,y
 
-		ldd sprite_next_room,u
+		ldd sprite_next_pos,u
+		andb #$18
 20		cmpd player2+sprite_room
 		bne 30F
-		ldx sprite_vp_off,u
+		ldx sprite_voff,u
 		leax vp2+128,x
 		jsr ,y
 
-		ldd sprite_next_room,u
+		ldd sprite_next_pos,u
+		andb #$18
 30		cmpd player3+sprite_room
 		bne 40F
-		ldx sprite_vp_off,u
+		ldx sprite_voff,u
 		leax vp3+128,x
 		jsr ,y
 
-		ldd sprite_next_room,u
+		ldd sprite_next_pos,u
+		andb #$18
 40		cmpd player4+sprite_room
 		bne 90F
-		ldx sprite_vp_off,u
+		ldx sprite_voff,u
 		leax vp4+128,x
 		jsr ,y
 90		rts
 
+undraw_sprite
+		lda [sprite_pos,u]
+		bne 90B
+		clra
+		ldx sprite_voff,u
+		ldy sprite_undraw_room,u
+		ldb sprite_pos+1,u
+		lsrb
+		bcc 10F
+		jmp draw_tile_b
+10		jmp draw_tile_a
+
+plr_move1
+		bsr undraw_sprite
+		ldx sprite_render,u
+		ldy 2,x
+		bsr draw_sprite
+		jmp plr_inc_state
+
+plr_move2
+		bsr undraw_sprite
+		ldx sprite_render,u
+		ldy 4,x
+		bsr draw_sprite
+		jmp plr_inc_state
+
+plr_draw_objects
+		jsr undraw_sprite
+		lda #state_plr_landed
+		sta sprite_state,u
+		jmp next_player
+
+plr_landed
+		jsr undraw_sprite
+		ldd sprite_next_pos,u
+		std sprite_pos,u
+		andb #$18
+		std sprite_room,u
+		ldd sprite_pos,u
+		jsr pos_to_voff
+		std sprite_voff,u
+		clr sprite_state,u
+		; pickups...
+		ldx sprite_pos,u
+		ldy #objects
+10		cmpx obj_pos,y
+		bne 20F
+		lda obj_type,y
+		beq 20F
+		pshs x,y
+		ldx #tbl_pickup
+		jsr [a,x]
+		puls x,y
+20		leay sizeof_object,y
+		cmpy #objects_end
+		blo 10B
+		; fall through
+
+plr_centred
+
+		jsr sprite_set_render
+		ldy [sprite_render,u]
+		jsr draw_sprite
+		lda plr_moving,u
+		beq next_player
+
+		ldx sprite_pos,u
+		ldb sprite_moveoff,u
+		leax b,x
+		cmpx player1+sprite_pos
+		beq 30F
+		cmpx player2+sprite_pos
+		beq 30F
+		cmpx player3+sprite_pos
+		beq 30F
+		cmpx player4+sprite_pos
+		beq 30F
+		ldy #monsters
+20		cmpx sprite_pos,y
+		beq 35F
+		leay sizeof_monster,y
+		cmpy #monsters_end
+		blo 20B
+		lda ,x
+		bpl 40F
+		; XXX temporarily allow moving through doors
+		cmpa #door_v
+		beq 40F
+		cmpa #door_h
+		beq 40F
+30		bra next_player
+35		lda sprite_hp,u
+		adda #$98
+		daa
+		sta sprite_hp,u
+		jsr plr_draw_hp
+		bra next_player
+40		stx sprite_next_pos,u
+		tfr x,d
+		andb #$18
+		cmpd sprite_room,u
+		beq 50F
+		clr sprite_room,u
+		lda #state_plr_draw_room
+		bra plr_set_state
+50		jsr sprite_set_render
+		bra plr_inc_state
+
+process_players
+		ldu #players
+10		lda sprite_state,u
+		bmi next_player
+		lda sprite_state,u
+		ldx #jtbl_player_state
+		jmp [a,x]
+plr_clr_state	clra
+plr_set_state	sta sprite_state,u
+next_player	leau sizeof_player,u
+		cmpu #players_end
+		blo 10B
+		rts
+
+plr_inc_state	lda sprite_state,u
+plr_delay	adda #2
+		bra plr_set_state
+
+pickup_nop	rts
+
+pickup_food
+		clr obj_type,y
+		clr [sprite_pos,u]
+		lda sprite_hp,u
+		adda #$10
+		daa
+		bvc 10F
+		lda #$99
+10		sta sprite_hp,u
+		jsr plr_draw_hp
+		bra points_5
+
+pickup_armour
+		clr obj_type,y
+		clr [sprite_pos,u]
+		lda plr_armour,u
+		inca
+		cmpa #7
+		bhi points_10
+		sta plr_armour,u
+		jsr plr_draw_armour
+		bra points_10
+
+points_5	lda plr_score0,u
+		adda #$05
+		bra 10F
+points_10	lda plr_score0,u
+		adda #$10
+		bra 10F
+pickup_money
+		clr obj_type,y
+		clr [sprite_pos,u]
+		lda plr_score0,u
+		adda #$20
+10		daa
+		sta plr_score0,u
+		bcc 10F
+		lda plr_score2,u
+		adda #$01
+		daa
+		sta plr_score2,u
+10		jmp plr_draw_score
+
+pickup_power
+		clr obj_type,y
+		clr [sprite_pos,u]
+		lda plr_power,u
+		inca
+		cmpa #9
+		bhi points_10
+		sta plr_power,u
+		jsr plr_draw_power
+		bra points_10
+
+pickup_weapon
+		clr obj_type,y
+		clr [sprite_pos,u]
+		lda plr_ammo,u
+		inca
+		cmpa #3
+		bhi points_10
+		sta plr_ammo,u
+		jsr plr_draw_ammo
+		bra points_10
+
 jtbl_monster_state
-		fdb mon_st0_centred
-		fdb mon_st2_check_direction
-		fdb mon_st4_move1
-		fdb mon_delay
-		fdb mon_st8_move2
-		fdb mon_st10_landed
-		fdb mon_delay
-		fdb mon_delay
-		fdb mon_delay
-		fdb mon_st10_landed
+		fdb mon_centred		; 0
+		fdb mon_check_direction	; 2
+		fdb mon_move1		; 4
+		fdb mon_delay		; 6
+		fdb mon_move2		; 8
+		fdb mon_landed		; 10
+		fdb mon_delay		; 12
+		fdb mon_delay		; 14
+		fdb mon_delay		; 16
+		fdb mon_landed		; 18
+
+jtbl_player_state
+		fdb plr_centred		; 0
+		fdb plr_move1		; 2
+		fdb plr_move2		; 4
+state_plr_landed	equ *-jtbl_player_state
+		fdb plr_landed		; 6
+state_plr_draw_room	equ *-jtbl_player_state
+		fdb plr_draw_room	; 8
+		fdb plr_draw_objects	; 10
+
+tbl_pickup	equ *-2		; no dispatch for floor
+		fdb pickup_nop	; exit
+		fdb pickup_nop	; trapdoor
+		fdb pickup_nop	; drainer
+		fdb pickup_money
+		fdb pickup_food
+		fdb pickup_nop	; tport
+		fdb pickup_power
+		fdb pickup_armour
+		fdb pickup_nop	; potion
+		fdb pickup_weapon
+		fdb pickup_nop	; cross
+		fdb pickup_nop	; speed
+		fdb pickup_nop	; key
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1308,14 +1596,14 @@ spriteset_p3
 		spr_draw_seq "monster","right","1","b"
 
 spriteset_p4
-		spr_draw_seq "monster","up","0","a"
-		spr_draw_seq "monster","up","0","b"
-		spr_draw_seq "monster","up","1","a"
-		spr_draw_seq "monster","up","1","b"
-		spr_draw_seq "monster","down","0","a"
-		spr_draw_seq "monster","down","0","b"
-		spr_draw_seq "monster","down","1","a"
-		spr_draw_seq "monster","down","1","b"
+		spr_draw_seq "p4","up","0","a"
+		spr_draw_seq "p4","up","0","b"
+		spr_draw_seq "p4","up","1","a"
+		spr_draw_seq "p4","up","1","b"
+		spr_draw_seq "p4","down","0","a"
+		spr_draw_seq "p4","down","0","b"
+		spr_draw_seq "p4","down","1","a"
+		spr_draw_seq "p4","down","1","b"
 		spr_draw_seq "monster","left","0","a"
 		spr_draw_seq "monster","left","1","b"
 		spr_draw_seq "monster","right","0","a"
@@ -1411,32 +1699,27 @@ level24		includebin "level24.bin"
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 TILE_BLOCKING	macro
-		fdb draw_door_v_\1
-		fdb draw_door_h_\1
-mod_stone_\1	fdb draw_stone01_\1
+		fdb tile_door_v_\1
+		fdb tile_door_h_\1
+mod_stone_\1	fdb tile_stone01_\1
 		endm
 
 TILE_LIST	macro
-		fdb draw_floor_\1
-		fdb draw_exit_\1
-		fdb draw_trapdoor_\1
-		fdb jmp_drainer_\1
-		fdb draw_money_\1
-		fdb draw_food_\1
-		fdb draw_tport_\1
-		fdb draw_power_\1
-		fdb draw_armour_\1
-		fdb draw_potion_\1
-		fdb draw_weapon_\1
-		fdb draw_cross_\1
-		fdb draw_speed_\1
-		fdb draw_key_\1
+		fdb tile_floor_\1
+		fdb tile_exit_\1
+		fdb tile_trapdoor_\1
+mod_drainer_\1	fdb tile_drainer0_\1
+		fdb tile_money_\1
+		fdb tile_food_\1
+		fdb tile_tport_\1
+		fdb tile_power_\1
+		fdb tile_armour_\1
+		fdb tile_potion_\1
+		fdb tile_weapon_\1
+		fdb tile_cross_\1
+		fdb tile_speed_\1
+		fdb tile_key_\1
 		endm
-
-mod_drainer_a	equ *+1
-jmp_drainer_a	jmp draw_drainer0_a
-mod_drainer_b	equ *+1
-jmp_drainer_b	jmp draw_drainer0_b
 
 		TILE_BLOCKING a
 tiles_a		TILE_LIST a
@@ -1463,7 +1746,7 @@ trapdoors_end
 
 monsters	equ *-sprite_offset
 		rmb max_monsters*sizeof_monster
-monsters_end
+monsters_end	equ *-sprite_offset
 
 		rmb (256-*%256)%256		; page align
 
@@ -1472,4 +1755,5 @@ leveldata_end
 objects
 keys		rmb max_keys*sizeof_object
 items		rmb max_items*sizeof_object
+		rmb max_trapdoors*sizeof_object
 objects_end
