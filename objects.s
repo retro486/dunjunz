@@ -6,14 +6,17 @@ next_oid	macro
 tileidx		set tileidx+2
 		endm
 
-; OIDs <= 0 are not dereferenced into object structures
+tileidx		set -8
+
 ; OIDs < 0 are blocking
+; OIDs <= 0 are not dereferenced into object structures
+; OIDs < -6 are placeholders, not real objects
 
-tileidx		set -6
+		next_oid "monster"	; -8
 
-		next_oid "door_v"
-		next_oid "door_h"
-		next_oid "stone"
+		next_oid "door_v"	; - 6
+		next_oid "door_h"	; - 4
+		next_oid "stone"	; - 2
 
 		next_oid "floor"	; 0
 
@@ -31,18 +34,3 @@ tileidx		set -6
 		next_oid "speed"
 		next_oid "key"
 
-; deprecated - just here so things continue to build
-
-		next_oid "monster_up0"
-		next_oid "monster_up1"
-		next_oid "monster_down0"
-		next_oid "monster_down1"
-		next_oid "monster_up"
-		next_oid "monster_down"
-		next_oid "monster_left"
-		next_oid "monster_right"
-
-		next_oid "fball_up"
-		next_oid "fball_down"
-		next_oid "fball_left"
-		next_oid "fball_right"

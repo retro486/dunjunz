@@ -23,6 +23,7 @@ static void helptext(void) {
 "  -w PIXELS    width [from image]\n"
 "  -h PIXELS    height [from image]\n"
 "  -s SHIFT     initial right shift in pixels (0-7) [0]\n"
+"  -i OFFSET    initial indexed offset [0]\n"
 "  -n           don't bother updating register to known value\n"
 "  -N           don't return register to next tile address\n"
 "  -b           bitmap only\n"
@@ -40,6 +41,7 @@ static struct option long_options[] = {
 
 int main(int argc, char **argv) {
 	int shift = 0;
+	int idx_off = 0;
 	int fb_w = 32;
 	char *idx = "x";
 	int xoff = 0, yoff = 0;
@@ -50,7 +52,7 @@ int main(int argc, char **argv) {
 	_Bool resolution = 0;
 
 	int c;
-	while ((c = getopt_long(argc, argv, "W:x:y:w:h:s:nNbro:?",
+	while ((c = getopt_long(argc, argv, "W:x:y:w:h:s:i:nNbro:?",
 				long_options, NULL)) != -1) {
 		switch (c) {
 		case 0:
@@ -76,6 +78,9 @@ int main(int argc, char **argv) {
 				fprintf(stderr, "shift out of range\n");
 				exit(EXIT_FAILURE);
 			}
+			break;
+		case 'i':
+			idx_off = strtol(optarg, NULL, 0);
 			break;
 		case 'n':
 			no_advance = 1;
@@ -187,7 +192,6 @@ int main(int argc, char **argv) {
 
 	int reg_a = -1;
 	int reg_b = -1;
-	int idx_off = 0;
 	int total_idx_off = 0;
 
 	int cycles = 0;
@@ -306,9 +310,12 @@ int main(int argc, char **argv) {
 			}
 		}
 		if (y < (h-1)) {
-			if ((idx_off + fb_w * 2) > 127) {
-				int add = idx_off + fb_w * 4;
-				idx_off = -fb_w * 3;
+			int addlines = 3;
+			if ((idx_off + fb_w + wbytes - 1) > 127) {
+				while ((y+addlines) >= (h-1))
+					addlines--;
+				int add = idx_off + fb_w * addlines;
+				idx_off = -fb_w * (addlines-1);
 				total_idx_off += add;
 				cycles += (cyc = cyc_indexed(4, add));
 				printf("\tlea%s\t%d,%s\t; %d\n", idx, add, idx, cyc);

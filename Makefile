@@ -44,101 +44,101 @@ STONES = \
 	stone21 \
 	stone25
 
-MONSTERS_U = monster_up0 monster_up1
-MONSTERS_D = monster_down0 monster_down1
-MONSTERS_L = monster_left0 monster_left1
-MONSTERS_R = monster_right0 monster_right1
+SPRITES_U = monster_up0 monster_up1 p1_up0 p3_up0 p3_up1
+SPRITES_D = monster_down0 monster_down1 p1_down0 p3_down0 p3_down1
+SPRITES_L = monster_left0 monster_left1 p3_left0
+SPRITES_R = monster_right0 monster_right1 p3_right0
 
-MONSTERS = $(MONSTERS_U) $(MONSTERS_D) $(MONSTERS_L) $(MONSTERS_R)
+SPRITES = $(SPRITES_U) $(SPRITES_D) $(SPRITES_L) $(SPRITES_R)
 
 tiles.s: $(TILES:%=c_%.png) ./tile2s Makefile
 	echo "; tile drawing routines" > $@
 	echo "" >> $@
 	for t in $(TILES) $(EXTRA_TILES); do \
 		echo "draw_$${t}_a" >> $@; \
-		./tile2s -n c_$$t.png >> $@; \
+		./tile2s -i -128 -n c_$$t.png >> $@; \
 		echo "	rts" >> $@; \
 		echo "draw_$${t}_b" >> $@; \
-		./tile2s -n -s 4 c_$$t.png >> $@; \
+		./tile2s -i -128 -n -s 4 c_$$t.png >> $@; \
 		echo "	rts" >> $@; \
 	done
 	for s in 0 1 2 3 4 5 6 7 8 9; do \
 		echo "draw_lnum_$$s" >> $@; \
-		./tile2s -n s_lnum_$$s.png >> $@; \
+		./tile2s -i -128 s_lnum_$$s.png >> $@; \
 		echo "	rts" >> $@; \
 	done
 	for s in 1 2 3 4 5 6 7 8 9; do \
 		echo "draw_snum_$$s" >> $@; \
-		./tile2s -n s_snum_$$s.png >> $@; \
+		./tile2s -i -128 -n s_snum_$$s.png >> $@; \
 		echo "	rts" >> $@; \
 	done
 	for s in key speed weapon; do \
 		echo "draw_s_$$s" >> $@; \
-		./tile2s -n s_$$s.png >> $@; \
+		./tile2s -i -128 -n s_$$s.png >> $@; \
 		echo "	rts" >> $@; \
 	done
 
-sprites.s: $(MONSTERS:%=c_%.png) ./tile2s Makefile
+sprites.s: $(SPRITES:%=c_%.png) ./tile2s Makefile
 	echo "; sprite drawing routines" > $@
 	echo "" >> $@
-	for t in $(MONSTERS_U); do \
+	for t in $(SPRITES_U); do \
 		echo "draw_$${t}_a2" >> $@; \
 		echo "	leax -fb_w*3,x" >> $@; \
 		echo "draw_$${t}_a1" >> $@; \
 		echo "	leax -fb_w*3,x" >> $@; \
 		echo "draw_$${t}_a0" >> $@; \
-		./tile2s -n c_$$t.png >> $@; \
+		./tile2s -i -128 -n c_$$t.png >> $@; \
 		echo "	rts" >> $@; \
 		echo "draw_$${t}_b2" >> $@; \
 		echo "	leax -fb_w*3,x" >> $@; \
 		echo "draw_$${t}_b1" >> $@; \
 		echo "	leax -fb_w*3,x" >> $@; \
 		echo "draw_$${t}_b0" >> $@; \
-		./tile2s -n -s 4 c_$$t.png >> $@; \
+		./tile2s -i -128 -n -s 4 c_$$t.png >> $@; \
 		echo "	rts" >> $@; \
 	done
-	for t in $(MONSTERS_D); do \
+	for t in $(SPRITES_D); do \
 		echo "draw_$${t}_a2" >> $@; \
 		echo "	leax fb_w*3,x" >> $@; \
 		echo "draw_$${t}_a1" >> $@; \
 		echo "	leax fb_w*3,x" >> $@; \
 		echo "draw_$${t}_a0" >> $@; \
-		./tile2s -n c_$$t.png >> $@; \
+		./tile2s -i -128 -n c_$$t.png >> $@; \
 		echo "	rts" >> $@; \
 		echo "draw_$${t}_b2" >> $@; \
 		echo "	leax fb_w*3,x" >> $@; \
 		echo "draw_$${t}_b1" >> $@; \
 		echo "	leax fb_w*3,x" >> $@; \
 		echo "draw_$${t}_b0" >> $@; \
-		./tile2s -n -s 4 c_$$t.png >> $@; \
+		./tile2s -i -128 -n -s 4 c_$$t.png >> $@; \
 		echo "	rts" >> $@; \
 	done
-	for t in $(MONSTERS_L); do \
+	for t in $(SPRITES_L); do \
 		echo "draw_$${t}_a2" >> $@; \
-		echo "draw_$${t}_b1" >> $@; \
 		echo "	leax -1,x" >> $@; \
+		echo "draw_$${t}_b1" >> $@; \
 		echo "draw_$${t}_a0" >> $@; \
-		./tile2s -n c_$$t.png >> $@; \
+		./tile2s -i -128 -n c_$$t.png >> $@; \
 		echo "	rts" >> $@; \
 		echo "draw_$${t}_b2" >> $@; \
 		echo "draw_$${t}_a1" >> $@; \
 		echo "	leax -1,x" >> $@; \
 		echo "draw_$${t}_b0" >> $@; \
-		./tile2s -n -s 4 c_$$t.png >> $@; \
+		./tile2s -i -128 -n -s 4 c_$$t.png >> $@; \
 		echo "	rts" >> $@; \
 	done
-	for t in $(MONSTERS_R); do \
+	for t in $(SPRITES_R); do \
 		echo "draw_$${t}_a2" >> $@; \
-		echo "	leax 1,x" >> $@; \
 		echo "draw_$${t}_b1" >> $@; \
+		echo "	leax 1,x" >> $@; \
 		echo "draw_$${t}_a0" >> $@; \
-		./tile2s -n c_$$t.png >> $@; \
+		./tile2s -i -128 -n c_$$t.png >> $@; \
 		echo "	rts" >> $@; \
 		echo "draw_$${t}_b2" >> $@; \
 		echo "	leax 1,x" >> $@; \
 		echo "draw_$${t}_a1" >> $@; \
 		echo "draw_$${t}_b0" >> $@; \
-		./tile2s -n -s 4 c_$$t.png >> $@; \
+		./tile2s -i -128 -n -s 4 c_$$t.png >> $@; \
 		echo "	rts" >> $@; \
 	done
 
