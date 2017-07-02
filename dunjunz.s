@@ -37,6 +37,8 @@
 
 ; Definitions
 
+DEBUG_LEVEL25	equ 0
+
 		include	"dragonhw.s"
 		include "objects.s"
 		include "notefreq.s"
@@ -191,7 +193,7 @@ sizeof_plr	equ *+plr_offset_
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-; _p_dfl_ - player defaults.  Used by plr_setup.
+; _p_dfl_ - player defaults.  Used by setup_players.
 
 		org 0
 p_dfl_y		rmb 1		; initial 'y' coordinate in map
@@ -240,7 +242,7 @@ KEYTBL_ENTRY	macro
 ; player struct.
 
 		org $0112
-		setdp $01
+gamedp		equ *>>8
 
 tmp0		rmb 2
 dzip_end
@@ -319,19 +321,16 @@ BSS_start_	equ *
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-		DATA
-eops		fcb $12,$12	; nop,nop
-		fcb $12,$12	; nop,nop
-		fcb $12,$12	; nop,nop
-		fcb $12,$44	; nop,lsra
-		fcb $12,$44	; nop,lsra
-		fcb $12,$44	; nop,lsra
-		fcb $44,$44	; lsra,lsra
-		fcb $44,$44	; lsra,lsra
-		CODE
+; Sound mixer.
 
-; Sound mixer.  CH1 is sawtooth, CH2 is square.  Both have envelope
-; control.
+; Either channel can be configured as a sawtooth or square wave using
+; self-modifying code.  The core for each channel always just counts up at
+; given frequency.  That result is then either ANDed with $80 (square) or
+; shifted right (sawtooth).
+
+; Then envelope is applied, also using self-modifying code.  Two bytes are
+; executed, generally either NOP or LSRA.  Two LSRA instructions would
+; drop the amplitude of the channel by a quarter.
 
 play2frags
 		bsr playfrag
@@ -423,10 +422,21 @@ c1val		equ *+1
 		lda #$35
 		sta reg_pia1_crb	; disable sound mux
 
-		lda #1
+		lda #gamedp
 		tfr a,dp
-		setdp 1
+		setdp gamedp
 		rts
+
+; Set up a sequence to be played.  Find free or lower priority channel and
+; populate its data.
+
+; Sound data starts with a waveform (either wave_sqr or wave_saw), and
+; continues with a list of (frequency,envelope).  A zero frequency ends
+; the list.
+
+; Entry:
+; 	a = priority
+; 	x -> sound data
 
 snd_play	ldb sound
 		beq 10F
@@ -453,140 +463,144 @@ snd_play_c1	sta c1pri
 		std c1off
 		rts
 
-snw_sqr		equ $8012	; (anda) #$80, nop
-snw_saw		equ $FF44	; (anda) #$ff, lsra
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-snv3		equ $1212	; nop,nop
-snv2		equ $1244	; nop,lsra
-snv1		equ $4444	; lsra,lsra
-snv0		equ $124f	; nop,clra
+; Sound data
+
+wave_sqr	equ $8012	; (anda) #$80, nop
+wave_saw	equ $ff44	; (anda) #$ff, lsra
+
+env3		equ $1212	; nop,nop
+env2		equ $1244	; nop,lsra
+env1		equ $4444	; lsra,lsra
+env0		equ $124f	; nop,clra
 
 		DATA
-snd_key		fdb snw_sqr
-		fdb g6,snv2,g6,snv1
+snd_key		fdb wave_sqr
+		fdb g6,env2,g6,env1
 		fdb 0
 
-snd_monster_die	fdb snw_saw
-		fdb c4,snv3,c4,snv2
-		fdb e4,snv3,e4,snv2
-		fdb c4,snv3,c4,snv2
-		fdb e4,snv2,e4,snv1
-		fdb e4,snv2,e4,snv1
+snd_monster_die	fdb wave_saw
+		fdb c4,env3,c4,env2
+		fdb e4,env3,e4,env2
+		fdb c4,env3,c4,env2
+		fdb e4,env2,e4,env1
+		fdb e4,env2,e4,env1
 		fdb 0
 
-snd_drainer	fdb snw_saw
-		fdb g2,snv2,g1,snv2
-		fdb g2,snv2,g1,snv2
-		fdb g2,snv2,g1,snv2
-		fdb g2,snv2,g1,snv2
+snd_drainer	fdb wave_saw
+		fdb g2,env2,g1,env2
+		fdb g2,env2,g1,env2
+		fdb g2,env2,g1,env2
+		fdb g2,env2,g1,env2
 		fdb 0
 
-snd_low		fdb snw_saw
-		fdb c4,snv1,c4,snv2
-		fdb c4+20,snv2,c4+20,snv2
-		fdb c4,snv3,c4,snv3
-		fdb c4+20,snv3,c4+20,snv3
+snd_low		fdb wave_saw
+		fdb c4,env1,c4,env2
+		fdb c4+20,env2,c4+20,env2
+		fdb c4,env3,c4,env3
+		fdb c4+20,env3,c4+20,env3
 		fdb 0
 
-snd_money	fdb snw_sqr
-		fdb c7,snv2,c7,snv3
-		fdb c7-20,snv3,c7-20,snv3
-		fdb c7,snv2,c7,snv2
-		fdb c7-20,snv1,c7-20,snv1
+snd_money	fdb wave_sqr
+		fdb c7,env2,c7,env3
+		fdb c7-20,env3,c7-20,env3
+		fdb c7,env2,c7,env2
+		fdb c7-20,env1,c7-20,env1
 		fdb 0
 
-snd_fire	fdb snw_saw
-		fdb c5,snv1,c5,snv2
+snd_fire	fdb wave_saw
+		fdb c5,env1,c5,env2
 		fdb 0
 
-snd_door	fdb snw_saw
-		fdb f5,snv3,f5,snv3
-		fdb f4,snv2,f4,snv2
-		fdb f4,snv2,f4,snv1
+snd_door	fdb wave_saw
+		fdb f5,env3,f5,env3
+		fdb f4,env2,f4,env2
+		fdb f4,env2,f4,env1
 		fdb 0
 
-snd_food	fdb snw_saw
-		fdb g5,snv3,g5,snv2
-		fdb g5+20,snv3,g5+20,snv2
-		fdb g4,snv3,g4,snv2
-		fdb g4+20,snv3,g4+20,snv2
+snd_food	fdb wave_saw
+		fdb g5,env3,g5,env2
+		fdb g5+20,env3,g5+20,env2
+		fdb g4,env3,g4,env2
+		fdb g4+20,env3,g4+20,env2
 		fdb 0
 
-snd_magic	fdb snw_saw
-		fdb c4,snv3,c4,snv1
-		fdb e4,snv3,e4,snv1
-		fdb c5,snv3,c5,snv1
-		fdb c5,snv3,c5,snv1
-		fdb c4,snv3,c4,snv1
-		fdb e4,snv3,e4,snv1
-		fdb c5,snv2,c5,snv1
-		fdb c5,snv2,c5,snv1
-		fdb c4,snv2,c4,snv1
-		fdb e4,snv2,e4,snv1
-		fdb c5,snv2,c5,snv1
-		fdb c5,snv2,c5,snv1
-		fdb c4,snv1,c4,snv1
-		fdb e4,snv1,e4,snv1
-		fdb c5,snv1,c5,snv1
-		fdb c5,snv1,c5,snv1
+snd_magic	fdb wave_saw
+		fdb c4,env3,c4,env1
+		fdb e4,env3,e4,env1
+		fdb c5,env3,c5,env1
+		fdb c5,env3,c5,env1
+		fdb c4,env3,c4,env1
+		fdb e4,env3,e4,env1
+		fdb c5,env2,c5,env1
+		fdb c5,env2,c5,env1
+		fdb c4,env2,c4,env1
+		fdb e4,env2,e4,env1
+		fdb c5,env2,c5,env1
+		fdb c5,env2,c5,env1
+		fdb c4,env1,c4,env1
+		fdb e4,env1,e4,env1
+		fdb c5,env1,c5,env1
+		fdb c5,env1,c5,env1
 		fdb 0
 
-snd_exit	fdb snw_saw
-		fdb c7,snv3,c7/2,snv3
-		fdb (c7+b6)/2,snv3,(c7+b6)/2,snv3
-		fdb b6,snv3,b6,snv3
-		fdb (b6+as6)/2,snv3,(b6+as6)/2,snv3
-		fdb as6,snv3,as6,snv3
-		fdb (as6+a6)/2,snv3,(as6+a6)/2,snv3
-		fdb a6,snv3,a6,snv3
-		fdb (a6+gs6)/2,snv3,(a6+gs6)/2,snv3
-		fdb gs6,snv3,gs6,snv3
-		fdb (gs6+g6)/2,snv3,(gs6+g6)/2,snv3
-		fdb g6,snv3,g6,snv3
-		fdb (g6+fs6)/2,snv3,(g6+fs6)/2,snv3
-		fdb fs6,snv3,fs6,snv3
-		fdb (fs6+f6)/2,snv3,(fs6+f6)/2,snv3
-		fdb f6,snv3,f6,snv3
-		fdb (f6+e6)/2,snv3,(f6+e6)/2,snv3
-		fdb e6,snv3,e6,snv3
-		fdb (e6+ds6)/2,snv3,(e6+ds6)/2,snv3
-		fdb ds6,snv3,ds6,snv3
-		fdb (ds6+d6)/2,snv3,(ds6+d6)/2,snv3
-		fdb d6,snv2,d6,snv2
-		fdb (d6+cs6)/2,snv2,(d6+cs6)/2,snv2
-		fdb cs6,snv1,cs6,snv1
-		fdb (cs6+c6)/2,snv1,(cs6+c6)/2,snv1
+snd_exit	fdb wave_saw
+		fdb c7,env3,c7,env3
+		fdb (c7+b6)/2,env3,(c7+b6)/2,env3
+		fdb b6,env3,b6,env3
+		fdb (b6+as6)/2,env3,(b6+as6)/2,env3
+		fdb as6,env3,as6,env3
+		fdb (as6+a6)/2,env3,(as6+a6)/2,env3
+		fdb a6,env3,a6,env3
+		fdb (a6+gs6)/2,env3,(a6+gs6)/2,env3
+		fdb gs6,env3,gs6,env3
+		fdb (gs6+g6)/2,env3,(gs6+g6)/2,env3
+		fdb g6,env3,g6,env3
+		fdb (g6+fs6)/2,env3,(g6+fs6)/2,env3
+		fdb fs6,env3,fs6,env3
+		fdb (fs6+f6)/2,env3,(fs6+f6)/2,env3
+		fdb f6,env3,f6,env3
+		fdb (f6+e6)/2,env3,(f6+e6)/2,env3
+		fdb e6,env3,e6,env3
+		fdb (e6+ds6)/2,env3,(e6+ds6)/2,env3
+		fdb ds6,env3,ds6,env3
+		fdb (ds6+d6)/2,env3,(ds6+d6)/2,env3
+		fdb d6,env2,d6,env2
+		fdb (d6+cs6)/2,env2,(d6+cs6)/2,env2
+		fdb cs6,env1,cs6,env1
+		fdb (cs6+c6)/2,env1,(cs6+c6)/2,env1
 		fdb 0
 
-snd_tport	fdb snw_saw
-		fdb cs5,snv1,ds5,snv1
-		fdb f5,snv1,g5,snv1
-		fdb a5,snv1,b5,snv1
-		fdb c6,snv1
-		fdb cs5,snv2
-		fdb ds5,snv2,f5,snv2
-		fdb g5,snv2,a5,snv2
-		fdb b5,snv2,c6,snv2
-		fdb cs5,snv3,ds5,snv3
-		fdb f5,snv3,g5,snv3
-		fdb a5,snv3,b5,snv3
-		fdb c6,snv3
-		fdb cs5,snv3,ds5,snv3
-		fdb f5,snv3,g5,snv3
-		fdb a5,snv3,b5,snv3
-		fdb c6,snv3
-		fdb cs5,snv3,ds5,snv3
-		fdb f5,snv3,g5,snv3
-		fdb a5,snv3,b5,snv3
-		fdb c6,snv3
-		fdb cs5,snv2,ds5,snv2
-		fdb f5,snv2,g5,snv2
-		fdb a5,snv2,b5,snv2
-		fdb c6,snv2
-		fdb cs5,snv1
-		fdb ds5,snv1,f5,snv1
-		fdb g5,snv1,a5,snv1
-		fdb b5,snv1,c6,snv1
+snd_tport	fdb wave_saw
+		fdb cs5,env1,ds5,env1
+		fdb f5,env1,g5,env1
+		fdb a5,env1,b5,env1
+		fdb c6,env1
+		fdb cs5,env2
+		fdb ds5,env2,f5,env2
+		fdb g5,env2,a5,env2
+		fdb b5,env2,c6,env2
+		fdb cs5,env3,ds5,env3
+		fdb f5,env3,g5,env3
+		fdb a5,env3,b5,env3
+		fdb c6,env3
+		fdb cs5,env3,ds5,env3
+		fdb f5,env3,g5,env3
+		fdb a5,env3,b5,env3
+		fdb c6,env3
+		fdb cs5,env3,ds5,env3
+		fdb f5,env3,g5,env3
+		fdb a5,env3,b5,env3
+		fdb c6,env3
+		fdb cs5,env2,ds5,env2
+		fdb f5,env2,g5,env2
+		fdb a5,env2,b5,env2
+		fdb c6,env2
+		fdb cs5,env1
+		fdb ds5,env1,f5,env1
+		fdb g5,env1,a5,env1
+		fdb b5,env1,c6,env1
 		fdb 0
 		CODE
 
@@ -594,31 +608,52 @@ snd_tport	fdb snw_saw
 
 ; Main game loop
 
-mainloop
 
-		; two-frame animations toggle every 8 frames.
-		lda anim_count
-		adda #16
-		beq 10F
-		bvc 30F
-		ldx #tile_drainer0_a
-		ldu #tile_drainer0_b
+		; tile set 0
+anim_tiles_0	ldx #tile_drainer0_a
+		stx mod_drainer_a
+		ldx #tile_drainer0_b
+		stx mod_drainer_b
+		ldx #tile_money0_a
+		stx mod_money_a
+		ldx #tile_money0_b
+		stx mod_money_b
+		ldx #tile_power0_a
+		ldu #tile_power0_b
 		ldy #tile_chalice_nw0_a
-		bra 20F
-10		ldx #tile_drainer1_a
-		ldu #tile_drainer1_b
+		bra 10F
+
+		; tile set 1
+anim_tiles_1	ldx #tile_drainer1_a
+		stx mod_drainer_a
+		ldx #tile_drainer1_b
+		stx mod_drainer_b
+		ldx #tile_money1_a
+		stx mod_money_a
+		ldx #tile_money1_b
+		stx mod_money_b
+		ldx #tile_power1_a
+		ldu #tile_power1_b
 		ldy #tile_chalice_nw1_a
-20		stx mod_drainer_a
-		stu mod_drainer_b
+10		stx mod_power_a
+		stu mod_power_b
 		sty mod_chalice
 mod_draw_chalice_0
-		jsr update_chalice
-30		sta anim_count
+                jsr update_chalice
+		bra anim_done
 
-		; spawn new monsters
-		jsr new_monster
+mainloop
 
-		; always update *some* objects
+		; Two-frame animations toggle every 8 frames.
+		inc anim_count
+		lda anim_count
+		anda #15
+		beq anim_tiles_1
+		anda #7
+		beq anim_tiles_0
+anim_done
+
+		; Always update *some* objects
 		ldu #pickups
 10		lda obj_tile,u
 		cmpa #always_draw_tile
@@ -628,9 +663,8 @@ mod_draw_chalice_0
 		cmpu #all_objects_end
 		blo 10B
 
-		; move the existing ones
-		jsr plr_scan_controls
 		jsr process_monsters
+		jsr plr_scan_controls
 		jsr process_players
 		jsr process_shots
 		jsr play2frags
@@ -656,17 +690,23 @@ mod_draw_chalice_0
 
 		lda #$ff
 		sta level	; no cheating once all dead!
-		ldx #death_screen_dz	; dzip start
+		ldy #death_screen	; dzip start
 game_over_screen
-		jsr dunzip_text_screen
+		jsr write_screen
 
 		; a few seconds pause for reflection
-		ldx #$1a00
+		ldx #$2000
 10		deca
 		bne 10B
 		leax -1,x
 		bne 10B
 99		jmp game_reset
+
+		DATA
+death_screen	fcb 12
+		fdb fb0+18*fb_w+128
+		includebin "death-screen.bin"
+		CODE
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -828,6 +868,16 @@ single_tile_x_b
 		DRAW_LAST_ROW_B 128
 99		rts
 
+update_chalice
+		ldu #player1
+		bsr plr_update_chalice
+		ldu #player2
+		bsr plr_update_chalice
+		ldu #player3
+		bsr plr_update_chalice
+		ldu #player4
+		; fall through to plr_update_chalice
+
 plr_update_chalice
 		ldb plr_yroom,u
 plr_update_chalice_b
@@ -836,32 +886,18 @@ plr_update_chalice_b
 		bne 99B
 10		ldx plr_win,u
 		leax $0483,x
-		; fall through to draw_chalice
-
 mod_chalice	equ *+1
-draw_chalice	ldu #tile_chalice_nw0_a
+		ldu #tile_chalice_nw0_a
 		jsr single_tile_x_a
 		leau 2,u
-		leax 9*fb_w,x
-		jsr single_tile_x_a
-		leau tile_chalice_ne0_b-tile_chalice_sw0_a-16,u
-		leax -9*fb_w+1,x
+		leax 1,x
 		jsr single_tile_x_b
 		leau 2,u
-		leax 9*fb_w,x
+		leax 9*fb_w-1,x
+		jsr single_tile_x_a
+		leau 2,u
+		leax 1,x
 		jmp single_tile_x_b
-
-update_chalice
-		pshs a
-		ldu #player1
-		bsr plr_update_chalice
-		ldu #player2
-		bsr plr_update_chalice
-		ldu #player3
-		bsr plr_update_chalice
-		ldu #player4
-		bsr plr_update_chalice
-		puls a,pc
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -878,13 +914,12 @@ game_reset	nop
 		clr reg_pia0_cra	; ddr...
 		clr reg_pia0_ddra	; all inputs
 		clr reg_pia0_crb	; ddr...
-		lda #$ff
+		ldd #$fffc
 		sta reg_pia0_ddrb	; all outputs
 		clr reg_pia1_cra	; ddr...
-		lda #$fc
-		sta reg_pia1_ddra	; only DAC bits are outputs
+		stb reg_pia1_ddra	; only DAC bits are outputs
 		clr reg_pia1_crb	; ddr...
-setup_p1ddrb	lda #$fc		; VDG & ROMSEL as outputs
+PATCH_p1ddrb	lda #$fc		; VDG & ROMSEL as outputs
 		sta reg_pia1_ddrb
 		ldd #$343c
 		sta reg_pia0_cra	; HS disabled
@@ -898,51 +933,51 @@ setup_p1ddrb	lda #$fc		; VDG & ROMSEL as outputs
 		sta reg_sam_f1c
 		sta reg_sam_f2c
 
-		lda #$01
+		lda #gamedp
 		tfr a,dp
-		setdp $01
+		setdp gamedp
 
 		lda level
 		inca
 		beq 1F
 		ldd #$fd40
 		sta reg_pia0_pdrb
-		bitb reg_pia0_pdra
-		lbeq cheat
+		bitb reg_pia0_pdra	; CLEAR?
+		beq cheat
 1
 
-		ldx #select_screen_dz	; dzip start
-		jsr dunzip_text_screen
+		ldy #select_screen
+		jsr write_screen
 
 		lda #$0f
 		sta playing
 set_sound_on	lda #$fc
-		sta sound
+9		sta sound
 
-10		ldx #$0294
+10		ldx #fb0+24*fb_w+4*8*fb_w+128
+		stx tmp0
+
 		lda playing
 		ldb #4
 		pshs a,b
 15		lsr ,s
 		bcc 20F
-		ldd #$1905
-		std ,x
-		lda #$13
+		ldy #text_yes
 		bra 22F
-20		ldd #$0e0f
-		std ,x
-		lda #$20
-22		sta 2,x
-		leax 32,x
+20		ldy #text_no
+22		jsr write_continue
 		dec 1,s
 		bne 15B
 		leas 2,s
 
-		ldd #$0606
+		ldx #fb0+24*fb_w+13*8*fb_w+128
+		stx tmp0
+
+		ldy #text_off
 		tst sound
 		beq 23F
-		ldd #$0e20
-23		std $03ae
+		ldy #text_on
+23		jsr write_continue
 
 		ldx #tbl_kdsp_menu
 		jmp wait_keypress_jump
@@ -957,21 +992,24 @@ toggle_p4	lda #$08
 30		eora playing
 		sta playing
 		bra 10B
-set_sound_off	clr sound
+set_sound_off	clra
+		bra 9B
+
+show_version	ldx #fb0+24*fb_w+128
+		stx tmp0
+		ldy #version
+		jsr write_continue
 		bra 10B
 
-show_version	ldx #$0200
-		ldu #version
-1		lda ,u+
-		beq 10B
-		cmpa #$40
-		blo 2F
-		eora #$40
-2		sta ,x+
-		bra 1B
-
 		DATA
-version		include "version.s"
+select_screen	fcb 8
+		fdb fb0+24*fb_w+128
+		includebin "select-screen.bin"
+text_yes	fcb $8e,$22,$0e,$1c,$ff,0
+text_no		fcb $8e,$17,$18,$27,$ff,0
+text_on		fcb $87,$18,$17,$27,0
+text_off	fcb $87,$18,$0f,$0f,0
+version		includebin "version.bin"
 		CODE
 
 		DATA
@@ -996,26 +1034,39 @@ start_game
 		lda #$ff
 		sta dead
 
+	if DEBUG_LEVEL25
+
+		bra 10F
+cheat		lda #23
+10		sta level
+
+	else
+
 		; level -1: will be incremented before use
 		sta level
 cheat
 
-;		bra 10F
-;cheat		lda #23
-;10		sta level
+	endif
 
 		; SAM VDG mode = G6R,G6C
 		;sta reg_sam_v0c
 		sta reg_sam_v1s
 		sta reg_sam_v2s
 		; VDG mode = CG6, CSS0
-game_vdg_mode	equ *+1			; for patching
+PATCH_vdgmode_game	equ *+1
 		lda #$e2
 		sta reg_pia1_pdrb
+		; fall through to level_setup
 
-		clr anim_count
+		; - - - - - - - - - - - - - - - - - - - - - - -
 
-; initialise for next level
+		DATA
+end_screen	fcb 12
+		fdb fb0+18*fb_w+128
+		includebin "end-screen.bin"
+		CODE
+
+		; Set up next level.
 
 level_setup
 
@@ -1024,7 +1075,7 @@ level_setup
 		sta finished
 		clr exiting
 
-		; clear monsters (-ve HP)
+		; Clear monsters
 		ldx #monsters
 		ldd #$8000|monster_tilebase
 1		clr spr_hp,x
@@ -1034,20 +1085,22 @@ level_setup
 		cmpx #monsters_end
 		blo 1B
 
+		; Next level.  Detect when game is complete (finished
+		; level 25).  Modify various routines to only call
+		; chalice-based routines on level 25.  Unpack level data.
 		ldu #levels
 		ldb #$8c	; cmpx
+		inc level
 		lda level
-		inca
 		cmpa #24
 		beq 4F
 		blo 5F
-		ldx #end_screen_dz
+		ldy #end_screen
 		jmp game_over_screen
 4		ldb #$bd	; jsr
 5		stb mod_draw_chalice_0
 		stb mod_draw_chalice_1
 		stb mod_check_chalice
-		sta level
 		lsla
 		ldx #bmp_wall_end
 		stx dzip_end	; dzip end
@@ -1059,6 +1112,7 @@ level_setup
 		cmpu #bmp_objects_end
 		blo 10B
 
+		; Select stone graphic based on level
 		lda level
 		ldb #18
 		mul
@@ -1067,11 +1121,13 @@ level_setup
 		addd #tiles_b_start-tiles_a_start
 		std mod_stone_b
 
-		ldu #levelcache
-		ldy #objects
+		; Populate object table
 
-		; u -> level door list
-		; y -> current door list
+		ldu #levelcache		; source: from unpacked level
+		ldy #objects		; destination: object table
+
+		; Doors.  Source is (y,x) pairs.  Top bit of x set if door
+		; is vertical, else horizontal.
 		lda #max_doors
 		sta tmp0
 10		pulu d
@@ -1088,14 +1144,15 @@ level_setup
 		dec tmp0
 		bne 10B
 
+		; Clear remaining door slots
 10		cmpy #doors_end
 		bhs 20F
 		jsr clr_object
 		bra 10B
 20
 
-		; u -> level key list
-		; y -> object list
+		; Keys.  Source is (y,x) of key, and order is important:
+		; the nth key here opens the nth door above.
 		lda #max_keys
 		sta tmp0
 10		pulu x
@@ -1109,14 +1166,14 @@ level_setup
 30		dec tmp0
 		bne 10B
 
+		; Clear remaining key slots
 10		cmpy #keys_end
 		bhs 20F
 		bsr clr_object
 		bra 10B
 20
 
-		; u -> level item list
-		; y -> object list
+		; Items (pickups, drainers).  Source is (type,y,x).
 		lda #max_items
 		sta tmp0
 10		pulu a,x
@@ -1128,14 +1185,14 @@ level_setup
 30		dec tmp0
 		bne 10B
 
+		; Clear remaining item slots
 10		cmpy #items_end
 		bhs 20F
 		bsr clr_object
 		bra 10B
 20
 
-		; u -> level trapdoor list
-		; y -> object list
+		; Trapdoors.  Source is (y,x).
 		lda #max_trapdoors
 		sta tmp0
 10		pulu x
@@ -1144,24 +1201,23 @@ level_setup
 		dec tmp0
 		bne 10B
 
-		; clear any remaining objects
-		; including shots
+		; Clear any remaining objects, including shots
 10		cmpy #all_objects_end
 		bhs 20F
 		bsr clr_object
 		bra 10B
 20
 
-		; unpack play screen
+		; Unpack play screen
 		ldx #fb0_end
 		stx dzip_end
 		ldu #fb0
 		ldx #play_screen_dz
 		jsr dunzip
 
-		bsr plr_setup
+		bra setup_players
 
-		jmp mainloop
+		; - - - - - - - - - - - - - - - - - - - - - - -
 
 		; x = y,x
 		; a = type
@@ -1267,6 +1323,10 @@ tbl_y_to_woff	fdb $0000,$0120
 		fdb $06c0,$07e0
 tbl_x_to_woff	fcb 0,1,3,4
 		fcb 6,7,9,10
+		fcb 12,13,15,16
+		fcb 18,19,21,22
+		fcb 24,25,27,28
+		fcb 30
 		CODE
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1274,7 +1334,9 @@ tbl_x_to_woff	fcb 0,1,3,4
 ; Set up players.  If player is dead, restore default stats and clear
 ; score.  Always restore to 99 health.
 
-plr_setup
+; Continues from level_setup.
+
+setup_players
 
 		ldu #player1
 		ldy #tbl_p_dfl
@@ -1296,6 +1358,7 @@ plr_setup
 		ldb #$02
 		stb plr_yroom,u		; invalidate yroom
 		ldd #$8080
+		std obj_y,u
 		std plr_key_opens,u	; no key
 		clr plr_speed,u		; no speedyboots
 
@@ -1326,12 +1389,13 @@ plr_setup
 		cmpu #players_end
 		blo 10B
 
-		clr dead		; clear remaining bits
+		clra
+		clrb
+
+		sta dead		; clear remaining bits
 		ldx #death_fifo		; initialise death fifo
 		stx death_fifo_end
 
-		clra
-		clrb
 		ldx #c1freq
 		stx c1env
 		std ,x
@@ -1340,7 +1404,8 @@ plr_setup
 		std ,x
 		sta c1pri
 		sta c2pri
-		rts
+
+		jmp mainloop
 
 		DATA
 tbl_p_dfl
@@ -1387,19 +1452,17 @@ tbl_p_dfl
 ; Player input.  Scan keyboard & joysticks, set plr_control accordingly.
 
 		setdp $ff	; only ever called with DP=$ff
-scan_keys	lda #6
-		sta tmp0
+scan_keys
 10		ldd ,x
+		beq 99F
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra
 		beq 20F
 		leax 3,x
-		dec tmp0
-		bne 10B
-		rts
+		bra 10B
 20		lda 2,x
 		sta plr_control,u
-		rts
+99		rts
 
 		DATA
 tbl_p1_keys	KEYTBL_ENTRY 3,2,2			; 'C' = magic
@@ -1408,26 +1471,29 @@ tbl_p1_keys	KEYTBL_ENTRY 3,2,2			; 'C' = magic
 		KEYTBL_ENTRY 0,5,$80|facing_right	; 'X' = right
 		KEYTBL_ENTRY 2,5,$80|facing_left	; 'Z' = left
 		KEYTBL_ENTRY 1,4,1			; 'Q' = fire
+		fdb 0
 tbl_p2_keys	KEYTBL_ENTRY 2,2,2			; 'B' = magic
 		KEYTBL_ENTRY 7,3,$80|facing_up		; 'O' = up
 		KEYTBL_ENTRY 3,3,$80|facing_down	; 'K' = down
 		KEYTBL_ENTRY 5,3,$80|facing_right	; 'M' = right
 		KEYTBL_ENTRY 6,3,$80|facing_left	; 'N' = left
 		KEYTBL_ENTRY 0,4,1			; 'P' = fire
+		fdb 0
 		CODE
 
 plr_scan_controls
 
-		setdp $01		; called with usual game DP
+		setdp gamedp		; called with usual game DP
 
-		clr player1+plr_control
-		clr player2+plr_control
-		clr player3+plr_control
-		clr player4+plr_control
+		clra
+		sta player1+plr_control
+		sta player2+plr_control
+		sta player3+plr_control
+		sta player4+plr_control
 
 		; keyboard & joystick scanning - will hit the PIAs a lot,
 		; so set DP
-		lda #$ff
+		coma		; lda #$ff
 		tfr a,dp
 		setdp $ff
 
@@ -1526,9 +1592,10 @@ plr_scan_controls
 		ldd #$3400
 		sta reg_pia0_cra
 		stb reg_pia1_pdra	; zero DAC
-		incb
-		tfr b,dp
-		setdp $01
+
+		lda #gamedp
+		tfr a,dp
+		setdp gamedp
 
 		rts
 
@@ -1600,12 +1667,11 @@ draw_lnum_pair
 		lsra
 		lsra
 		lsra
-		anda #$1e
 		bsr 10F
 		puls a
 		lsla
-		anda #$1e
-10		pshs u
+10		anda #$1e
+		pshs u
 		ldu #tbl_lnum
 		ldu a,u
 		pulu d
@@ -1627,7 +1693,7 @@ plr_draw_ammo	ldx plr_swin,u
 		sta tmp1
 		suba #4
 		sta tmp1+1
-draw_ammo_patch0
+PATCH_draw_ammo0
 		ldd #$55ba
 		stb 1,x
 		leax fb_w,x
@@ -1638,7 +1704,7 @@ draw_ammo_patch0
 		leax 2*fb_w,x
 		dec tmp1
 		bne 10B
-draw_ammo_patch1
+PATCH_draw_ammo1
 		ldd #$aaaa
 20		inc tmp1+1
 		beq 30F
@@ -1650,7 +1716,7 @@ draw_ammo_patch1
 
 plr_draw_key	ldx plr_swin,u
 		leax 2+32,x
-draw_key_patch
+PATCH_draw_key
 		ldd #$a656
 		sta -32,x
 		stb ,x
@@ -1660,7 +1726,7 @@ draw_key_patch
 
 plr_undraw_key	ldx plr_swin,u
 		leax 2+32,x
-undraw_key_patch
+PATCH_undraw_key
 		ldd #$aaaa
 		sta -32,x
 		stb ,x
@@ -1669,7 +1735,7 @@ undraw_key_patch
 
 plr_draw_speed	ldx plr_swin,u
 		leax 4*fb_w+2+64,x
-draw_speed_patch
+PATCH_draw_speed
 		ldd #$a69a
 		sta -64,x
 		stb -32,x
@@ -1682,7 +1748,7 @@ draw_speed_patch
 plr_undraw_speed
 		ldx plr_swin,u
 		leax 4*fb_w+2+64,x
-undraw_speed_patch
+PATCH_undraw_speed
 		ldd #$aaaa
 		sta -64,x
 		stb -32,x
@@ -1692,6 +1758,26 @@ undraw_speed_patch
 		rts
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+; Handle monsters.  First, spawn a new monster if a slot is available,
+; then for each extant monster, run its state machine.
+
+process_monsters
+		bsr new_monster
+		ldu #monsters
+10		lda obj_y,u
+		deca
+		bvs 20F
+		lda spr_state,u
+		ldx #jtbl_monster_state
+		jsr [a,x]
+20		leau sizeof_mon,u
+		cmpu #monsters_end
+		blo 10B
+		rts
+
+; Find next empty monster slot (if any) and create a new one.  Successive
+; calls iterate through each trapdoor in turn.
 
 new_monster
 next_td		equ *+1
@@ -1719,6 +1805,10 @@ next_td		equ *+1
 		stx spr_owoff,u
 		; fall through to mon_change_direction
 
+; Choose next "random" direction for a monster to head in.  Actually, it
+; simply cycles through the directions, but as it may be called for
+; multiple monsters each in turn, can appear random.
+
 mon_change_direction
 next_dir	equ *+1
 		lda #$06
@@ -1734,8 +1824,6 @@ next_dir	equ *+1
 ; Determine which tile to use for a sprite.  Calculates based on facing, x
 ; and y and adds to tilebase.  Because x & y vary, this animates sprite
 ; as it moves.
-; Entry:
-; 	u -> sprite
 
 spr_set_tile
 		lda spr_facing,u
@@ -1746,11 +1834,14 @@ spr_set_tile
 		sta obj_tile,u
 		rts
 
-; returns:
+; Test moving a sprite based on 'facing'.
+
+; Returns:
 ; 	a = new y
 ; 	b = new x
 ; 	x -> stone bitmap byte
 ; 	cc.z = 1 if not stone/door
+
 spr_move
 		lda spr_facing,u
 spr_move_a
@@ -1784,26 +1875,14 @@ spr_move_right	ldd obj_y,u
 		adda #48
 		bra 10B
 
-hit_player
-		lda #$90
-		adda plr_armour,u
-		adda spr_hp,u
-		daa
-		bcs 10F
-		jsr kill_player
-		clra
-10		sta spr_hp,u
-		jsr plr_draw_hp
-		bra 50F
-
 mon_check_direction
 		bsr spr_move
 		bne 55F
 10		pshs u
 		ldu #players
 20		cmpd obj_y,u
-		beq hit_player
-		leau sizeof_plr,u
+		beq 45F			; monster hit player
+25		leau sizeof_plr,u
 		cmpu #players_end
 		blo 20B
 		ldu #monsters
@@ -1818,11 +1897,15 @@ mon_check_direction
 		eora obj_y,u
 		anda #$f8
 		beq 40F
-		jsr spr_set_tile
+		bsr spr_set_tile
 		lda #state_mon_new_room
 		bra spr_set_state
-40		jsr spr_set_tile
+40		bsr spr_set_tile
 		bra spr_inc_state
+		; monster hit player
+45		lda #$90		; decrement hp by 10-armour
+		adda plr_armour,u
+		jsr plr_damage
 		; collision - change direction
 50		puls u
 55		jsr mon_change_direction
@@ -1870,15 +1953,22 @@ mon_dying
 		beq 20F
 		inca
 		cmpa #bones2
-		bls 10F
-		clra
+		bhi 20F
 10		sta obj_tile,u
 		ldx obj_woff,u
 		; use cx to position the death anim exactly where the
 		; monster was
 		ldb spr_cx,u
 		bra obj_draw_vx
-20		ldb #$80
+20		jsr spr_undraw
+		ldd spr_next_y,u
+		cmpd obj_y,u
+		beq 30F
+		std obj_y,u
+		jsr yx_to_woff
+		jsr spr_undraw_v
+30		clr obj_tile,u
+		ldb #$80
 		stb obj_y,u
 		rts
 
@@ -1908,19 +1998,6 @@ spr_inc_state	lda spr_state,u
 spr_delay	adda #2
 spr_set_state	sta spr_state,u
 99		rts
-
-process_monsters
-		ldu #monsters
-10		lda obj_y,u
-		deca
-		bvs 20F
-		lda spr_state,u
-		ldx #jtbl_monster_state
-		jsr [a,x]
-20		leau sizeof_mon,u
-		cmpu #monsters_end
-		blo 10B
-		rts
 
 		DATA
 jtbl_monster_state
@@ -1979,7 +2056,7 @@ obj_draw_vx	lda obj_y,u
 ; ... if a *also* already == tile, but note must manually set tmp0=yroom
 ; don't need u to point to an object to call this
 obj_draw_vxt	stx tmp4		; preserve woff
-		pshs u
+obj_draw_vxt4	pshs u
 		lsrb
 		bcs 10F
 		ldx #tbl_tiles_a
@@ -2028,7 +2105,7 @@ obj_draw_vxt	stx tmp4		; preserve woff
 spr_undraw
 		ldx spr_owoff,u		; original (centred) woff
 spr_undraw_v
-		pshs x			; preserve woff
+		stx tmp4		; preserve woff
 		bsr spr_test_pickup
 		beq 30F
 		ldy #pickups
@@ -2041,14 +2118,13 @@ spr_undraw_v
 20		leay sizeof_obj,y
 		cmpy #objects_end
 		blo 10B
-		puls x,pc
+		rts
 30		clra
-40		puls x			; restore woff
-		ldb obj_y,u
+40		ldb obj_y,u
 		andb #$f8
 		stb tmp0
 		ldb obj_x,u
-		jmp obj_draw_vxt
+		jmp obj_draw_vxt4
 
 ; Second state while changing room.  Draws all objects once.
 ; Subsequently, keys and animated objects are redrawn, anything else is
@@ -2193,8 +2269,8 @@ mod_check_chalice
 32		jmp spr_inc_state
 18		ldy #monsters
 20		cmpd obj_y,y
-		beq plr_bumped_mon
-		leay sizeof_mon,y
+		beq plr_bump
+25		leay sizeof_mon,y
 		cmpy #monsters_end
 		blo 20B
 
@@ -2252,31 +2328,18 @@ plr_fire
 
 		jmp obj_draw	; draw player
 
-plr_bumped_mon	lda spr_hp,u
-		adda #$99
-		daa
-		bcs 10F
-		jsr kill_player
-		clra
-10		sta spr_hp,u
-		jmp plr_draw_hp
+		; player bumped into monster
+plr_bump	lda #$99		; decrement hp by 1
+		jmp plr_damage
 
 plr_magic
 		jsr obj_draw
+		lda #$94	; -6HP for player 1
 		ldb plr_bit,u
-		lda spr_hp,u
-		adda #$97
-		daa
-		bcc 10F
 		lsrb
-		bne 20F
-		adda #$97
-		daa
-		bcs 20F
-10		jsr kill_player
-		clra
-20		sta spr_hp,u
-		jsr plr_draw_hp
+		beq 10F
+		lda #$97	; -3HP for player 2
+10		jsr plr_damage
 		; only kill monsters in player's window
 		lda obj_y,u
 		sta tmp0+1
@@ -2328,6 +2391,10 @@ plr_open_door
 		leax sizeof_obj,x
 		bra 10B		; should be safe loop
 20		clr obj_tile,x
+		pshs a,b,u
+		leau ,x
+		jsr obj_draw
+		puls a,b,u
 		ldx #tbl_x_to_bit
 		ldb b,x
 		ldx #bmp_wall+128
@@ -2364,11 +2431,20 @@ process_players
 		rts
 
 plr_die
-		ldx obj_woff,u
-		ldb spr_cx,u
-		clr obj_tile,u
-		jsr obj_draw_vx
-		lda #bones0-1
+		; if player had started to move to another square
+		; (spr_next_y != obj_y), undraw that square
+		ldd spr_next_y,u
+		cmpd obj_y,u
+		beq 10F
+		ldx obj_y,u
+		pshs x			; preserve old y,x
+		std obj_y,u
+		jsr yx_to_woff
+		jsr spr_undraw_v
+		puls x
+		stx obj_y,u		; restore old y,x
+		stx spr_next_y,u	; ensure resurrects in same place
+10		lda #bones0-1
 		sta obj_tile,u
 		jmp spr_inc_state
 
@@ -2461,17 +2537,20 @@ state_plr_undying	equ *-jtbl_player_state
 			fdb plr_undying
 		CODE
 
-kill_player_y
-		exg y,u
-		bsr kill_player
-		exg y,u
-99		rts
+plr_damage	adda spr_hp,u
+		daa
+		bcs 10F
+		bsr plr_kill
+		clra
+10		sta spr_hp,u
+		jmp plr_draw_hp
 
-kill_player
+plr_kill
 		lda spr_state,u
 		cmpa #state_plr_exit0
-		bhs 99B
-		ldx death_fifo_end
+		blo 10F
+		rts
+10		ldx death_fifo_end
 		stu ,x++
 		stx death_fifo_end
 		jsr kill_speed
@@ -2515,20 +2594,14 @@ drop_key
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 shot_hit_player
-		ldx obj_shot_plr,u
-		lda #$9a
-		suba plr_power,x
-		adda spr_hp,y
-		daa
-		bcs 10F
-		bsr kill_player_y
-		clra
-10		sta spr_hp,y
+		ldx obj_shot_plr,u	; x -> player shot belongs to
 		pshs u
-		leau ,y
-		jsr plr_draw_hp
+		leau ,y			; u -> player being shot
+		lda #$9a		; decrement hp by shot power
+		suba plr_power,x
+		bsr plr_damage
 		puls u
-		bra 15F
+		bra shot_clear
 
 process_shots
 		ldu #shots
@@ -2545,7 +2618,8 @@ process_shots
 12		jsr spr_move
 		beq 20F
 
-15		clr obj_tile,u
+shot_clear
+		clr obj_tile,u
 		ldx obj_shot_plr,u
 		dec plr_nshots,x
 		bra 90F
@@ -2608,7 +2682,7 @@ shot_hit_monster
 		; fall through - monster hp ignored now
 10		sta spr_hp,y
 		puls u
-		jmp 15B
+		jmp shot_clear
 
 shot_drainer
 		lda obj_shot_facing,u
@@ -2641,12 +2715,8 @@ pickup_drainer
 		ldx #snd_drainer
 		jsr snd_play
 		bsr kill_speed
-		ldb spr_hp,u
-		subb #$20
-		bcc 10F
-		jsr kill_player
-		clr spr_hp,u
-		jsr plr_draw_hp
+		lda #$80	; -20HP
+		jsr plr_damage
 		leas 3,s	; skip return address, stacked object type
 		puls x,y,pc
 
@@ -2870,31 +2940,31 @@ tbl_exit_data_end
 tbl_pickup_scores	equ *-1		; floor not a pickup
 		fcb 0		; exit
 		fcb 0		; trapdoor
-		fcb $20		; money
 		fcb $05		; food
 		fcb 0		; tport
-		fcb $10		; power
 		fcb $10		; armour
 		fcb $10		; potion
 		fcb $10		; weapon
 		fcb $10		; cross
 		fcb $10		; speed
 		fcb 0		; drainer
+		fcb $20		; money
+		fcb $10		; power
 		fcb 0		; key
 
 jtbl_pickup	equ *-2			; no dispatch for floor
 		fdb pickup_exit
 		fdb pickup_nop		; trapdoor
-		fdb pickup_money
 		fdb pickup_food
 		fdb pickup_tport
-		fdb pickup_power
 		fdb pickup_armour
 		fdb pickup_potion
 		fdb pickup_weapon
 		fdb pickup_cross
 		fdb pickup_speed
 		fdb pickup_drainer
+		fdb pickup_money
+		fdb pickup_power
 		fdb pickup_key
 
 		CODE
@@ -2965,13 +3035,80 @@ wait_keypress_jump
 		bne 28B
 		pulu pc
 
+; Screen data:
+; 	line height (1 byte)
+; 	initial line base (2 bytes)
+; 	character data (zero terminated)
+
+write_screen
+		; SAM VDG mode = G6R,G6C
+		sta reg_sam_v1s
+		sta reg_sam_v2s
+		; VDG mode = RG6, CSS0
+		lda #$f2
+		sta reg_pia1_pdrb
+		clra
+		clrb
+		ldx #fb0
+1		std ,x++
+		cmpx #fb0_end
+		blo 1B
+
+		lda ,y+
+		ldb #fb_w
+		mul
+		std mod_line_height
+		ldx ,y++
+write_update
+9		stx tmp0	; base address for current line
+write_continue
+		clr tmp1	; cursor x position
+10		lda ,y+
+		bne 15F
+		rts
+15		bpl write_char
+		inca
+		beq 18F
+		anda #$7f
+		adda tmp1
+		sta tmp1
+		bra 10B
+18		ldx tmp0
+mod_line_height	equ *+2
+		leax >0,x
+		bra 9B
+write_char	ldx #tbl_x_to_woff
+		ldb tmp1
+		ldb b,x
+		ldx tmp0
+		abx
+		deca
+		ldb #12
+		mul
+		tfr d,u
+		ldb tmp1
+		lsrb
+		bcs 20F
+		leau textfont_a,u
+		DRAW_ROW_A -128
+		DRAW_ROW_A -96
+		DRAW_ROW_A -64
+		DRAW_ROW_A -32
+		DRAW_ROW_A 0
+		DRAW_LAST_ROW_A 32
+		bra 30F
+20		leau textfont_b,u
+		DRAW_ROW_B -128
+		DRAW_ROW_B -96
+		DRAW_ROW_B -64
+		DRAW_ROW_B -32
+		DRAW_ROW_B 0
+		DRAW_LAST_ROW_B 32
+30		inc tmp1
+		jmp 10B
+
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-		DATA
-
-select_screen_dz	includebin "select-screen.bin.dz"
-death_screen_dz	includebin "death-screen.bin.dz"
-end_screen_dz	includebin "end-screen.bin.dz"
 play_screen_dz	includebin "play-screen.bin.dz"
 
 level1		includebin "level01.bin.dz"
@@ -2998,7 +3135,11 @@ level21		includebin "level21.bin.dz"
 level22		includebin "level22.bin.dz"
 level23		includebin "level23.bin.dz"
 level24		includebin "level24.bin.dz"
+	if DEBUG_LEVEL25
+level25		includebin "level25d.bin.dz"
+	else
 level25		includebin "level25.bin.dz"
+	endif
 
 levels
 		fdb level1,level2,level3,level4
@@ -3011,10 +3152,12 @@ levels
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-tiles_a_start
 		include "tiles.s"
-tiles_a_end
-		include "chalice.s"
+
+textfont_a
+		include "textfont.s"
+textfont_a_end
+sizeof_textfont	equ *-textfont_a
 
 tbl_tiles_a_start
 
@@ -3026,16 +3169,16 @@ tbl_tiles_a
 		fdb tile_floor_a
 		fdb tile_exit_a
 		fdb tile_trapdoor_a
-		fdb tile_money_a
 		fdb tile_food_a
 		fdb tile_tport_a
-		fdb tile_power_a
 		fdb tile_armour_a
 		fdb tile_potion_a
 		fdb tile_weapon_a
 		fdb tile_cross_a
 		fdb tile_speed_a
 mod_drainer_a	fdb tile_drainer0_a
+mod_money_a	fdb tile_money0_a
+mod_power_a	fdb tile_power0_a
 		fdb tile_key_a
 
 		fdb tile_p1_up0_a
@@ -3147,16 +3290,21 @@ sizeof_tbl_tiles_a	equ tbl_tiles_a_end-tbl_tiles_a_start
 tiles_b_start
 tile_drainer0_b	equ *+tile_drainer0_a-tiles_a_start
 tile_drainer1_b	equ *+tile_drainer1_a-tiles_a_start
+tile_money0_b	equ *+tile_money0_a-tiles_a_start
+tile_money1_b	equ *+tile_money1_a-tiles_a_start
+tile_power0_b	equ *+tile_power0_a-tiles_a_start
+tile_power1_b	equ *+tile_power1_a-tiles_a_start
 tile_floor_b	equ *+tile_floor_a-tiles_a_start
 		rzb tiles_a_end-tiles_a_start
 
 tbl_tiles_b_start
 tbl_tiles_b	equ *+tbl_tiles_a-tbl_tiles_a_start
 mod_drainer_b	equ *+mod_drainer_a-tbl_tiles_a_start
+mod_money_b	equ *+mod_money_a-tbl_tiles_a_start
+mod_power_b	equ *+mod_power_a-tbl_tiles_a_start
 		rzb sizeof_tbl_tiles_a
 
-		; unshifted tiles
-		include "utiles.s"
+textfont_b	rzb sizeof_textfont
 
 tbl_snum	equ *-2		; no zero in this font
 		fdb tile_snum_1
@@ -3202,7 +3350,9 @@ all_objects_end
 
 		section "INIT"
 
-start		org BSS_start
+		org BSS_start
+
+start
 		setdp 0			; assumed
 
 	if 0
@@ -3240,9 +3390,10 @@ no64k
 
 		orcc #$50
 		lds #$0100
-		lda #1
+
+		lda #gamedp
 		tfr a,dp
-		setdp 1
+		setdp gamedp
 
 		lda $a000		; [$A000] points to ROM1 in CoCos
 		anda #$20
@@ -3256,21 +3407,50 @@ no64k
 		sta reg_sam_f1c
 		sta reg_sam_f2c
 
-		ldx #video_select_dz	; dzip start
-		jsr dunzip_text_screen
+		ldu #textfont_a
+		ldx #textfont_b
+20		pulu d
+		lsra
+		rorb
+		lsra
+		rorb
+		lsra
+		rorb
+		lsra
+		rorb
+		std ,x++
+		cmpu #textfont_a_end
+		blo 20B
 
-vs_waitkey	ldx #$02a9
-		ldu #$02c9
+		ldy #thanks
+		jsr write_screen
+		clr reg_pia0_pdrb
+5		lda reg_pia0_pdra
+		ora #$80
+		inca
+		bne 5B
+10		lda reg_pia0_pdra
+		ora #$80
+		inca
+		bne 20F
+		bra 10B
+20
+
+		ldy #video_select
+		jsr write_screen
+
+vs_waitkey	ldx #fb0+24*fb_w+3*10*fb_w+128
+		stx tmp0
 		lda vs_want_ntsc
-		bne 10F
-		exg x,u
-10		ldd #$2d3e
-		std ,x
-		ldd #$3c2d
-		std 11,x
-		ldd #$2020
-		std ,u
-		std 11,u
+		beq 10F
+		ldy #vsel_cursor
+		jsr write_continue
+		ldy #vsel_blank
+		bra 20F
+10		ldy #vsel_blank
+		jsr write_continue
+		ldy #vsel_cursor
+20		jsr write_continue
 		ldx #tbl_kdsp_vs
 		jmp wait_keypress_jump
 vs_pal		lda #$ff
@@ -3307,23 +3487,23 @@ ntsc_phase1	ldd #$0201
 ntsc_phase0
 
 		ldu #ntsc_patches	; Apply NTSC patches
-		jsr apply_patches
+		bsr apply_patches
 		ldx #ntsc_palette0	; Palette-swap tiles
 		ldu #tiles_a_start
 10		bsr palette_swap_a
-		cmpu #all_tiles_a_end
+		cmpu #tiles_a_end
 		blo 10B
+15		bsr palette_swap_a	; chalice_nw0
 		bsr palette_swap_b	; chalice_ne0
-		bsr palette_swap_b	; chalice_se0
-		bsr palette_swap_b	; chalice_ne1
-		bsr palette_swap_b	; chalice_se1
+		cmpu #chalice_end
+		blo 15B
 		ldu #lnum_tiles_start	; Palette-swap large numbers
 20		bsr palette_swap_u
 		cmpu #lnum_tiles_end
 		blo 20B
 		ldx #ntsc_palette1	; Palette-swap small numbers
 		ldu #snum_tiles_start
-30		jsr palette_swap_u
+30		bsr palette_swap_u
 		cmpu #snum_tiles_end
 		blo 30B
 
@@ -3433,12 +3613,14 @@ coco_p1_keys	KEYTBL_ENTRY 1,4,2			; '1' = magic
 		KEYTBL_ENTRY 4,4,$80|facing_right	; '4' = right
 		KEYTBL_ENTRY 3,4,$80|facing_left	; '3' = left
 		KEYTBL_ENTRY 5,4,1			; '5' = fire
+		fdb 0
 coco_p2_keys	KEYTBL_ENTRY 7,5,2			; '/' = magic
 		KEYTBL_ENTRY 0,2,$80|facing_up		; 'P' = up
 		KEYTBL_ENTRY 3,5,$80|facing_down	; ';' = down
 		KEYTBL_ENTRY 6,5,$80|facing_right	; '.' = right
 		KEYTBL_ENTRY 4,5,$80|facing_left	; ',' = left
 		KEYTBL_ENTRY 0,4,1			; '0' = fire
+		fdb 0
 200
 
 		fcb 200F-100F		; patch size
@@ -3452,24 +3634,26 @@ coco_kdsp_vs	KEYDSP_ENTRY 0,2,vs_pal		; 'P'
 200
 
 		fcb 200F-100F		; patch size
-		fdb setup_p1ddrb	; patch destination
+		fdb PATCH_p1ddrb	; patch destination
 100
 coco_p1ddrb	lda #$f8		; VDG ONLY as outputs
 200
 
 		fcb 0			; no more patches
 
+		; - - - - - - - - - - - - - - - - - - - - - - -
+
 ; NTSC patches
 
 ntsc_patches
 		fcb 200F-100F		; patch size
-		fdb game_vdg_mode	; patch destination
+		fdb PATCH_vdgmode_game	; patch destination
 100
 		fcb $fa			; VDG mode RG6, CSS1
 200
 
 		fcb 200F-100F		; patch size
-		fdb draw_key_patch	; patch destination
+		fdb PATCH_draw_key	; patch destination
 100
 		ldd #$0cfc
 		sta -32,x
@@ -3478,13 +3662,13 @@ ntsc_patches
 200
 
 		fcb 200F-100F		; patch size
-		fdb undraw_key_patch	; patch destination
+		fdb PATCH_undraw_key	; patch destination
 100
 		ldd #$0000
 200
 
 		fcb 200F-100F		; patch size
-		fdb draw_speed_patch	; patch destination
+		fdb PATCH_draw_speed	; patch destination
 100
 		ldd #$0c30
 		sta -64,x
@@ -3495,13 +3679,13 @@ ntsc_patches
 200
 
 		fcb 200F-100F		; patch size
-		fdb undraw_speed_patch	; patch destination
+		fdb PATCH_undraw_speed	; patch destination
 100
 		ldd #$0000
 200
 
 		fcb 200F-100F		; patch size
-		fdb draw_ammo_patch0	; patch destination
+		fdb PATCH_draw_ammo0	; patch destination
 100
 		ldd #$ff20
 		stb 1,x
@@ -3512,7 +3696,7 @@ ntsc_patches
 200
 
 		fcb 200F-100F		; patch size
-		fdb draw_ammo_patch1	; patch destination
+		fdb PATCH_draw_ammo1	; patch destination
 100
 		ldd #$0000
 200
@@ -3524,6 +3708,8 @@ ntsc_patches
 200
 
 		fcb 0			; no more patches
+
+		; - - - - - - - - - - - - - - - - - - - - - - -
 
 ; NTSC data
 
@@ -3541,7 +3727,14 @@ tbl_kdsp_ntsc	KEYDSP_ENTRY 0,6,ntsc_phase0	; ENTER
 		KEYDSP_ENTRY 1,6,ntsc_phase1	; CLEAR
 		fdb 0
 
-video_select_dz	includebin "video-select.bin.dz"
+thanks		fcb 9
+		fdb fb0+9*fb_w+128
+		includebin "thanks.bin"
+video_select	fcb 10
+		fdb fb0+24*fb_w+128
+		includebin "video-select.bin"
+vsel_cursor	fcb $84,$26,$88,$26,$ff,0
+vsel_blank	fcb $84,$27,$88,$27,$ff,0
 ntsc_check_dz	includebin "ntsc-check.bin.dz"
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -

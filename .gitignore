@@ -8,27 +8,30 @@
 debian/
 
 ## generated files
-README.body.html
 dunjunz.body.html
 
+chalice.s
 level*.s
 notefreq.s
 ntsc-check.s
 play-screen.s
 play-screen-ntsc.s
 sprites.s
+textfont.s
 tile2s
 tiles.s
-utiles.s
-version.s
+version.txt
 
 dunjunz.lis
 level*.lis
 
 death-screen.bin
-death-screen.bin.dz
 end-screen.bin
-end-screen.bin.dz
+select-screen.bin
+thanks.bin
+video-select.bin
+version.bin
+
 level*.bin
 level*.bin.dz
 ntsc-check.bin
@@ -37,18 +40,14 @@ play-screen.bin
 play-screen.bin.dz
 play-screen-ntsc.bin
 play-screen-ntsc.bin.dz
-select-screen.bin
-select-screen.bin.dz
-video-select.bin
-video-select.bin.dz
 
 dunjunz.bin
 loading-screen.bin
 loading-screen.s
 
 ## final output
-README.shtml
 dunjunz.cas
+dunjunz.dsk
 dunjunz.shtml
 dunjunz.wav
 dunjunz-nl.wav

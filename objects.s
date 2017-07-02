@@ -34,10 +34,8 @@ floor		OBJ_TILE	; == 0
 
 exit		OBJ_TILE
 trapdoor	OBJ_TILE
-money		OBJ_TILE
 food		OBJ_TILE
 tport		OBJ_TILE
-power		OBJ_TILE
 armour		OBJ_TILE
 potion		OBJ_TILE
 weapon		OBJ_TILE
@@ -49,6 +47,8 @@ speed		OBJ_TILE
 always_draw_tile
 
 drainer		OBJ_TILE
+money		OBJ_TILE
+power		OBJ_TILE
 key		OBJ_TILE
 
 ; Player graphics.  Not real objects, just used to index into graphics

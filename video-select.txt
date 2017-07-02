@@ -1,0 +1,11 @@
+       DUNJUNZ
+
+
+       P  PAL
+       N  NTSC
+
+
+  SELECT VIDEO MODE
+
+
+  ENTER TO CONTINUE

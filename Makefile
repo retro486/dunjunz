@@ -20,111 +20,48 @@ EXTRA_DIST =
 %.dz: %
 	dzip -c $< > $@
 
+%.bin: %.txt Makefile
+	perl -pe 'chomp if eof' $< | sed 's/            /\o213/g;s/        /\o207/g;s/       /\o206/g;s/      /\o205/g;s/     /\o204/g;s/    /\o203/g;s/   /\o202/g;s/  /\o201/g' | tr '123456()\!A-Z.,\- \012\014' '\001-\047\377\377' > $@
+	/bin/echo -ne '\00' >> $@
+
 ####
 
-.PHONY: version.s
-version.s:
-	echo " fcc /        DUNJUNZ - BETA1/,0" > $@
+.PHONY: version.txt
+version.txt:
+	echo "  DUNJUNZ - BETA2.1" > $@
 
-TILES = \
-	door_v door_h \
-	floor \
-	exit trapdoor money food \
-	tport power armour potion \
-	weapon cross speed \
-	drainer0 drainer1 key
+tiles.s: ./tilesheet.sh tiles.png ./tile2s Makefile
+	./tilesheet.sh tiles.png > $@
 
-TILES_SRC = $(TILES:%=c_%.png) c_bones.png
+CLEAN += tiles.s
 
-TILESHEETS = \
-	./spritesheet.sh sprites.png \
-	./stonesheet.sh stones.png \
-	./exitsheet.sh exit.png
-
-tiles.s: $(TILES_SRC) $(CHALICE_SRC) sprites.png $(TILESHEETS) ./tile2s Makefile
-	echo "; tile bitmaps" > $@
-	echo "" >> $@
-	for t in $(TILES); do \
-		echo "tile_$${t}_a" >> $@; \
-		./tile2s -b c_$$t.png >> $@; \
-		echo "" >> $@; \
+textfont.s: textfont.png ./tile2s Makefile
+	echo "; text font" > $@
+	echo >> $@
+	for j in 0 1 2 3 4; do \
+		for i in 0 1 2 3 4 5 6 7; do \
+			./tile2s -b -x `expr $$i \* 12` -y `expr $$j \* 6` -w 12 -h 6 -r textfont.png >> $@; \
+		done; \
 	done
-	for s in 0 1 2 3 4 5 6 7; do \
-		echo "tile_bones$${s}_a" >> $@; \
-		./tile2s -b -x `expr $$s \* 12` -w 12 c_bones.png >> $@; \
-		echo "" >> $@; \
-	done
-	./spritesheet.sh sprites.png >> $@
-	./stonesheet.sh stones.png >> $@
-	./exitsheet.sh exit.png >> $@
-
-CHALICE_SRC = c_chalice_nw0.png c_chalice_nw1.png
-
-chalice.s: $(CHALICE_SRC) ./tile2s Makefile
-	echo "; chalice bitmaps" > $@
-	echo "" >> $@
-	for i in 0 1; do \
-		echo "tile_chalice_nw$${i}_a" >> $@; \
-		./tile2s -b c_chalice_nw$$i.png >> $@; \
-		echo "" >> $@; \
-		echo "tile_chalice_sw$${i}_a" >> $@; \
-		./tile2s -b -Y c_chalice_nw$$i.png >> $@; \
-		echo "" >> $@; \
-	done
-	echo "all_tiles_a_end" >> $@
-	echo "" >> $@
-	for i in 0 1; do \
-		echo "tile_chalice_ne$${i}_b" >> $@; \
-		./tile2s -b -X -s 4 c_chalice_nw$$i.png >> $@; \
-		echo "" >> $@; \
-		echo "tile_chalice_se$${i}_b" >> $@; \
-		./tile2s -b -X -Y -s 4 c_chalice_nw$$i.png >> $@; \
-		echo "" >> $@; \
-	done
-
-utiles.s: s_lnum.png s_snum.png ./tile2s Makefile
-	echo "; large digits" > $@
-	echo "lnum_tiles_start" >> $@
-	echo "" >> $@
-	for s in 0 1 2 3 4 5 6 7 8 9; do \
-		echo "tile_lnum_$$s" >> $@; \
-		./tile2s -x `expr $$s \* 8` -w 8 -b s_lnum.png >> $@; \
-		echo "" >> $@; \
-	done
-	echo "" >> $@
-	echo "lnum_tiles_end" >> $@
-	echo "" >> $@
-	echo "; small digits" >> $@
-	echo "snum_tiles_start" >> $@
-	echo "" >> $@
-	for s in 1 2 3 4 5 6 7 8 9; do \
-		echo "tile_snum_$$s" >> $@; \
-		./tile2s -x `expr \( $$s - 1 \) \* 8` -w 8 -b s_snum.png >> $@; \
-		echo "" >> $@; \
-	done
-	echo "" >> $@
-	echo "snum_tiles_end" >> $@
-
-CLEAN += tiles.s utiles.s
 
 ####
 
 LEVELS = 01 02 03 04 05 06 \
 	07 08 09 10 11 12 \
 	13 14 15 16 17 18 \
-	19 20 21 22 23 24 25
+	19 20 21 22 23 24 25 25d
 
 LEVELS_S = $(LEVELS:%=level%.s)
 LEVELS_BIN = $(LEVELS:%=level%.bin)
 LEVELS_BIN_DZ = $(LEVELS:%=level%.bin.dz)
 CLEAN += $(LEVELS_S) $(LEVELS_BIN) $(LEVELS_BIN_DZ) $(LEVELS:%=level%.lis)
 
-level%.bin: level%.s
+level%.bin: level%.s objects.s
 	$(ASM6809) -B -l $(<:.s=.lis) -o $@ $<
 
 %.s: %.map ./map2s.pl
 	echo "	include \"objects.s\"" > $@
-	echo "" >> $@
+	echo >> $@
 	./map2s.pl $< >> $@
 
 ####
@@ -134,8 +71,15 @@ level%.bin: level%.s
 
 $(LEVELS_S): objects.s
 
-TEXT_SCREENS = video-select.bin select-screen.bin death-screen.bin end-screen.bin
-TEXT_SCREENS_DZ = $(TEXT_SCREENS:%=%.dz)
+TEXT_INCLUDES = \
+	version.bin \
+	thanks.bin \
+	video-select.bin \
+	select-screen.bin \
+	death-screen.bin \
+	end-screen.bin
+
+CLEAN += $(TEXT_INCLUDES)
 
 play-screen.s: play-screen.png ./tile2s
 	./tile2s -b -o $@ $<
@@ -158,14 +102,13 @@ ntsc-check.bin: ntsc-check.s
 CLEAN += play-screen.s play-screen.bin play-screen.bin.dz
 CLEAN += play-screen-ntsc.s play-screen-ntsc.bin play-screen-ntsc.bin.dz
 CLEAN += ntsc-check.s ntsc-check.bin ntsc-check.bin.dz
-CLEAN += $(TEXT_SCREENS_DZ)
 
 notefreq.s: ./gen_notefreq.pl Makefile
 	./gen_notefreq.pl -c 59 > $@
 
 CLEAN += notefreq.s
 
-dunjunz.bin: dunjunz.s version.s notefreq.s tiles.s chalice.s utiles.s ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(TEXT_SCREENS_DZ) $(LEVELS_BIN_DZ)
+dunjunz.bin: dunjunz.s notefreq.s tiles.s textfont.s $(TEXT_INCLUDES) ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(LEVELS_BIN_DZ)
 	$(ASM6809) -C -e start -l $(<:.s=.lis) -o $@ $<
 CLEAN += dunjunz.lis dunjunz.bin
 
@@ -192,7 +135,7 @@ dunjunz.dsk: dunjunz.bin
 	decb dskini $@
 	decb copy -2b dunjunz.bin $@,DUNJUNZ.BIN
 
-CLEAN += dunjunz.cas dunjunz.wav dunjunz-nl.cas dunjunz-nl.wav
+CLEAN += dunjunz.cas dunjunz.wav dunjunz-nl.cas dunjunz-nl.wav dunjunz.dsk
 
 ####
 
@@ -203,14 +146,7 @@ dunjunz.shtml: dunjunz.head.html dunjunz.body.html dunjunz.foot.html
 	sed "s/%UPDATED%/`date '+%e %b %Y'`/" < dunjunz.head.html > $@
 	cat dunjunz.body.html dunjunz.foot.html >> $@
 
-README.body.html: README.md
-	pandoc -t html5 -o $@ $<
-
-README.shtml: README.head.html README.body.html dunjunz.foot.html
-	sed "s/%UPDATED%/`date '+%e %b %Y'`/" < README.head.html > $@
-	cat README.body.html dunjunz.foot.html >> $@
-
-CLEAN += dunjunz.body.html dunjunz.shtml README.body.html README.shtml
+CLEAN += dunjunz.body.html dunjunz.shtml
 
 ####
 
