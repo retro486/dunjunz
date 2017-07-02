@@ -8,9 +8,16 @@ debian/
 ## generated files
 dunjunz.bin
 dunjunz.lis
-level01.s
+level*.s
+level*.bin
+level*.lis
+loading-screen.bin
+loading-screen.s
+play-screen.bin
+play-screen.bin.dz
+play-screen.s
+sprites.s
 tile2s
-tiledefs.s
 tiles.s
 ## final output
 dunjunz.cas
