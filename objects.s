@@ -64,7 +64,7 @@ key		OBJ_TILE
 		; ensure pair alignment of following
 		OBJ_PAIR_ALIGN
 
-p1_base_tile
+p1_tilebase
 p1_up0		OBJ_TILE
 p1_up1		OBJ_TILE
 p1_down0	OBJ_TILE
@@ -86,7 +86,7 @@ p1_exit9	OBJ_TILE
 p1_exit10	OBJ_TILE
 p1_exit11	OBJ_TILE
 
-p2_base_tile
+p2_tilebase
 p2_up0		OBJ_TILE
 p2_up1		OBJ_TILE
 p2_down0	OBJ_TILE
@@ -108,7 +108,7 @@ p2_exit9	OBJ_TILE
 p2_exit10	OBJ_TILE
 p2_exit11	OBJ_TILE
 
-p3_base_tile
+p3_tilebase
 p3_up0		OBJ_TILE
 p3_up1		OBJ_TILE
 p3_down0	OBJ_TILE
@@ -130,7 +130,7 @@ p3_exit9	OBJ_TILE
 p3_exit10	OBJ_TILE
 p3_exit11	OBJ_TILE
 
-p4_base_tile
+p4_tilebase
 p4_up0		OBJ_TILE
 p4_up1		OBJ_TILE
 p4_down0	OBJ_TILE
@@ -152,7 +152,7 @@ p4_exit9	OBJ_TILE
 p4_exit10	OBJ_TILE
 p4_exit11	OBJ_TILE
 
-monster_base_tile
+monster_tilebase
 monster_up0	OBJ_TILE
 monster_up1	OBJ_TILE
 monster_down0	OBJ_TILE

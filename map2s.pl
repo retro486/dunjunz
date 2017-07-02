@@ -125,7 +125,7 @@ while (scalar(@objects) < 30) {
 
 # doors
 {
-	print "level_doors\n";
+	print "lvl_doors\n";
 	for my $o (@doors) {
 		print "\tfcb ".join(",",@{$o})."\n";
 	}
@@ -134,16 +134,24 @@ while (scalar(@objects) < 30) {
 
 # keys
 {
-	print "level_keys\n";
+	print "lvl_keys\n";
 	for my $o (@keys) {
 		print "\tfcb ".join(",",@{$o})."\n";
 	}
 	print "\n";
 }
 
+# objects
+{
+	print "lvl_items\n";
+	for my $o (@objects) {
+		print "\tfcb ".join(",",@{$o}[2,0,1])."\n";
+	}
+}
+
 # trapdoors
 {
-	print "level_trapdoors\n";
+	print "lvl_trapdoors\n";
 	for my $o (@trapdoors) {
 		print "\tfcb ".join(",",@{$o})."\n";
 	}
@@ -151,17 +159,9 @@ while (scalar(@objects) < 30) {
 	print "\n";
 }
 
-# objects
-{
-	print "level_objects\n";
-	for my $o (@objects) {
-		print "\tfcb ".join(",",@{$o}[2,0,1])."\n";
-	}
-}
-
 print "\n";
 
-print "level_bmap\n";
+print "lvl_bmp_wall\n";
 for my $i (0..191) {
 	print "\tfcb " if (($i & 3) == 0);
 	printf "\%\%\%08b", 0+$bitmap[$i];
@@ -169,4 +169,4 @@ for my $i (0..191) {
 	print "\n" if (($i & 3) == 3);
 }
 
-print "level_end\n";
+print "lvl_end\n";

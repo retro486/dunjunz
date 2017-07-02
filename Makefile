@@ -22,6 +22,10 @@ EXTRA_DIST =
 
 ####
 
+.PHONY: version.s
+version.s:
+	echo " fcc /    DUNJUNZ  ALPHA `date +%Y%m%d`/,0" > $@
+
 TILES = \
 	door_v door_h \
 	floor \
@@ -54,19 +58,26 @@ tiles.s: $(TILES_SRC) sprites.png ./spritesheet.sh ./exitsheet.sh ./tile2s Makef
 
 utiles.s: s_lnum.png s_snum.png ./tile2s Makefile
 	echo "; large digits" > $@
+	echo "lnum_tiles_start" >> $@
 	echo "" >> $@
 	for s in 0 1 2 3 4 5 6 7 8 9; do \
 		echo "tile_lnum_$$s" >> $@; \
 		./tile2s -x `expr $$s \* 8` -w 8 -b s_lnum.png >> $@; \
 		echo "" >> $@; \
 	done
+	echo "" >> $@
+	echo "lnum_tiles_end" >> $@
+	echo "" >> $@
 	echo "; small digits" >> $@
+	echo "snum_tiles_start" >> $@
 	echo "" >> $@
 	for s in 1 2 3 4 5 6 7 8 9; do \
 		echo "tile_snum_$$s" >> $@; \
 		./tile2s -x `expr \( $$s - 1 \) \* 8` -w 8 -b s_snum.png >> $@; \
 		echo "" >> $@; \
 	done
+	echo "" >> $@
+	echo "snum_tiles_end" >> $@
 
 CLEAN += tiles.s utiles.s
 
@@ -97,19 +108,33 @@ level%.bin: level%.s
 
 $(LEVELS_S): objects.s
 
-TEXT_SCREENS = select-screen.bin death-screen.bin end-screen.bin
+TEXT_SCREENS = video-select.bin select-screen.bin death-screen.bin end-screen.bin
 TEXT_SCREENS_DZ = $(TEXT_SCREENS:%=%.dz)
 
 play-screen.s: play-screen.png ./tile2s
 	./tile2s -b -o $@ $<
 
+play-screen-ntsc.s: play-screen-ntsc.png ./tile2s
+	./tile2s -b -r -o $@ $<
+
+ntsc-check.s: ntsc-check.png ./tile2s
+	./tile2s -b -o $@ $<
+
 play-screen.bin: play-screen.s
 	$(ASM6809) -B -o $@ $<
 
+play-screen-ntsc.bin: play-screen-ntsc.s
+	$(ASM6809) -B -o $@ $<
+
+ntsc-check.bin: ntsc-check.s
+	$(ASM6809) -B -o $@ $<
+
 CLEAN += play-screen.s play-screen.bin play-screen.bin.dz
+CLEAN += play-screen-ntsc.s play-screen-ntsc.bin play-screen-ntsc.bin.dz
+CLEAN += ntsc-check.s ntsc-check.bin ntsc-check.bin.dz
 CLEAN += $(TEXT_SCREENS_DZ)
 
-dunjunz.bin: dunjunz.s tiles.s utiles.s play-screen.bin.dz $(TEXT_SCREENS_DZ) $(LEVELS_BIN_DZ)
+dunjunz.bin: dunjunz.s version.s tiles.s utiles.s ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(TEXT_SCREENS_DZ) $(LEVELS_BIN_DZ)
 	$(ASM6809) -D -e start -l $(<:.s=.lis) -o $@ $<
 CLEAN += dunjunz.lis dunjunz.bin
 

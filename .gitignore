@@ -27,10 +27,16 @@ end-screen.bin
 end-screen.bin.dz
 level*.bin
 level*.bin.dz
+ntsc-check.bin
+ntsc-check.bin.dz
 play-screen.bin
 play-screen.bin.dz
+play-screen-ntsc.bin
+play-screen-ntsc.bin.dz
 select-screen.bin
 select-screen.bin.dz
+video-select.bin
+video-select.bin.dz
 
 dunjunz.bin
 loading-screen.bin
