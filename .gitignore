@@ -1,0 +1,17 @@
+## common temporary files
+*~
+.*.swp
+.*.swo
+.DS_Store
+## debian rules
+debian/
+## generated files
+dunjunz.bin
+dunjunz.lis
+level01.s
+tile2s
+tiledefs.s
+tiles.s
+## final output
+dunjunz.cas
+dunjunz.wav
