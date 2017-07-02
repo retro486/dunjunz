@@ -1,7 +1,7 @@
 # Dunjunz
 
 .PHONY: all
-all: dunjunz.bin dunjunz.cas
+all: dunjunz.bin dunjunz.cas dunjunz.wav dunjunz.dsk
 
 ####
 
@@ -24,7 +24,7 @@ EXTRA_DIST =
 
 .PHONY: version.s
 version.s:
-	echo " fcc /    DUNJUNZ  ALPHA `date +%Y%m%d`/,0" > $@
+	echo " fcc /        DUNJUNZ - BETA1/,0" > $@
 
 TILES = \
 	door_v door_h \
@@ -32,15 +32,16 @@ TILES = \
 	exit trapdoor money food \
 	tport power armour potion \
 	weapon cross speed \
-	drainer0 drainer1 key \
-	stone01 stone02 stone03 stone06 \
-	stone10 stone12 stone13 stone14 \
-	stone17 stone18 stone20 stone21 \
-	stone25
+	drainer0 drainer1 key
 
 TILES_SRC = $(TILES:%=c_%.png) c_bones.png
 
-tiles.s: $(TILES_SRC) sprites.png ./spritesheet.sh ./exitsheet.sh ./tile2s Makefile
+TILESHEETS = \
+	./spritesheet.sh sprites.png \
+	./stonesheet.sh stones.png \
+	./exitsheet.sh exit.png
+
+tiles.s: $(TILES_SRC) $(CHALICE_SRC) sprites.png $(TILESHEETS) ./tile2s Makefile
 	echo "; tile bitmaps" > $@
 	echo "" >> $@
 	for t in $(TILES); do \
@@ -54,7 +55,32 @@ tiles.s: $(TILES_SRC) sprites.png ./spritesheet.sh ./exitsheet.sh ./tile2s Makef
 		echo "" >> $@; \
 	done
 	./spritesheet.sh sprites.png >> $@
+	./stonesheet.sh stones.png >> $@
 	./exitsheet.sh exit.png >> $@
+
+CHALICE_SRC = c_chalice_nw0.png c_chalice_nw1.png
+
+chalice.s: $(CHALICE_SRC) ./tile2s Makefile
+	echo "; chalice bitmaps" > $@
+	echo "" >> $@
+	for i in 0 1; do \
+		echo "tile_chalice_nw$${i}_a" >> $@; \
+		./tile2s -b c_chalice_nw$$i.png >> $@; \
+		echo "" >> $@; \
+		echo "tile_chalice_sw$${i}_a" >> $@; \
+		./tile2s -b -Y c_chalice_nw$$i.png >> $@; \
+		echo "" >> $@; \
+	done
+	echo "all_tiles_a_end" >> $@
+	echo "" >> $@
+	for i in 0 1; do \
+		echo "tile_chalice_ne$${i}_b" >> $@; \
+		./tile2s -b -X -s 4 c_chalice_nw$$i.png >> $@; \
+		echo "" >> $@; \
+		echo "tile_chalice_se$${i}_b" >> $@; \
+		./tile2s -b -X -Y -s 4 c_chalice_nw$$i.png >> $@; \
+		echo "" >> $@; \
+	done
 
 utiles.s: s_lnum.png s_snum.png ./tile2s Makefile
 	echo "; large digits" > $@
@@ -134,8 +160,13 @@ CLEAN += play-screen-ntsc.s play-screen-ntsc.bin play-screen-ntsc.bin.dz
 CLEAN += ntsc-check.s ntsc-check.bin ntsc-check.bin.dz
 CLEAN += $(TEXT_SCREENS_DZ)
 
-dunjunz.bin: dunjunz.s version.s tiles.s utiles.s ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(TEXT_SCREENS_DZ) $(LEVELS_BIN_DZ)
-	$(ASM6809) -D -e start -l $(<:.s=.lis) -o $@ $<
+notefreq.s: ./gen_notefreq.pl Makefile
+	./gen_notefreq.pl -c 59 > $@
+
+CLEAN += notefreq.s
+
+dunjunz.bin: dunjunz.s version.s notefreq.s tiles.s chalice.s utiles.s ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(TEXT_SCREENS_DZ) $(LEVELS_BIN_DZ)
+	$(ASM6809) -C -e start -l $(<:.s=.lis) -o $@ $<
 CLEAN += dunjunz.lis dunjunz.bin
 
 loading-screen.s: loading-screen.png ./tile2s
@@ -150,11 +181,16 @@ dunjunz.cas dunjunz.wav: loading-screen.bin dunjunz.bin
 	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ --eof-data --dzip --fast \
 		-B -l 0x0400 loading-screen.bin \
 		--vdg 0xe0 --sam-v 6 --sam-f 2 \
-		-D dunjunz.bin
+		-C dunjunz.bin
 
 dunjunz-nl.cas dunjunz-nl.wav: dunjunz.bin
 	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ --eof-data --dzip --fast \
-		-D dunjunz.bin
+		-C dunjunz.bin
+
+dunjunz.dsk: dunjunz.bin
+	rm -f $@
+	decb dskini $@
+	decb copy -2b dunjunz.bin $@,DUNJUNZ.BIN
 
 CLEAN += dunjunz.cas dunjunz.wav dunjunz-nl.cas dunjunz-nl.wav
 

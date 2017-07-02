@@ -12,11 +12,15 @@ README.body.html
 dunjunz.body.html
 
 level*.s
+notefreq.s
+ntsc-check.s
 play-screen.s
+play-screen-ntsc.s
 sprites.s
 tile2s
 tiles.s
 utiles.s
+version.s
 
 dunjunz.lis
 level*.lis

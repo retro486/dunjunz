@@ -39,6 +39,7 @@
 
 		include	"dragonhw.s"
 		include "objects.s"
+		include "notefreq.s"
 
 fb0		equ $0200	; framebuffer base
 fb_w		equ 32		; framebuffer line width
@@ -259,15 +260,12 @@ exiting		rmb 1		; non-zero = a player is using exit
 
 death_fifo_end	rmb 2		; ptr to end of death fifo
 
-; number of fragments of beep to play
-c1length	rmb 1
-c2length	rmb 1
+; sound channel priority
+c1pri		rmb 1
+c2pri		rmb 1
 
 sound		rmb 1
 level		rmb 1
-
-stone_a		rmb 2
-stone_b		rmb 2
 
 anim_count	rmb 1
 
@@ -287,7 +285,7 @@ players_end	equ *+plr_offset_
 ; ========================================================================
 
 ; Level source unzips into screen area.  Will then immediately overwrite
-; by unzipping play area.  Level wall bitmap placed such that unpacking
+; by unzipping play screen.  Level wall bitmap placed such that unpacking
 ; puts it in the right place without need to copy.
 
 levelcache	equ fb0_end-(sizeof_lvl-sizeof_bmp)
@@ -319,6 +317,281 @@ DATA_start_	equ *
 BSS_start_	equ *
 		CODE
 
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+		DATA
+eops		fcb $12,$12	; nop,nop
+		fcb $12,$12	; nop,nop
+		fcb $12,$12	; nop,nop
+		fcb $12,$44	; nop,lsra
+		fcb $12,$44	; nop,lsra
+		fcb $12,$44	; nop,lsra
+		fcb $44,$44	; lsra,lsra
+		fcb $44,$44	; lsra,lsra
+		CODE
+
+; Sound mixer.  CH1 is sawtooth, CH2 is square.  Both have envelope
+; control.
+
+play2frags
+		bsr playfrag
+		; fall through to playfrag
+
+playfrag
+		lda #*>>8
+		tfr a,dp
+		setdp *>>8
+
+		; channel 1 "envelope"
+c1env		equ *+1
+		ldx #c1freq		; convenient initial zero
+		ldd ,x++
+		std c1freq
+		beq 10F
+		ldd ,x++
+		std c1envops
+		stx c1env
+		bra 20F
+10		sta c1pri
+		std c1off
+20
+
+		; channel 2 "envelope"
+c2env		equ *+1
+		ldx #c2freq		; convenient initial zero
+		ldd ,x++
+		std c2freq
+		beq 10F
+		ldd ,x++
+		std c2envops
+		stx c2env
+		bra 20F
+10		sta c2pri
+		std c2off
+20
+
+		lda c1pri
+		ora c2pri
+		beq 10F
+		ldb #$3d
+		stb reg_pia1_crb	; enable sound mux
+10
+
+		ldx #100		; fragment length
+		ldu #reg_pia1_pdra	; DAC
+
+		; - - - - - - - - - - - - - - - - - - - - - - -
+
+playfrag_loop
+
+c1off		equ *+1
+                ldd #$0000		; 3
+c1freq		equ *+1
+                addd #$0000		; 4
+		std c1off		; 5
+c1wave		equ *+1
+		anda #$ff		; 2
+		lsra			; 2
+
+c1envops	nop			; 2
+		nop			; 2
+		sta c1val		; 4
+
+c2off		equ *+1
+                ldd #$0000		; 3
+c2freq		equ *+1
+                addd #$0000		; 4
+		std c2off		; 5
+c2wave		equ *+1
+		anda #$ff		; 2
+		lsra			; 2
+
+c2envops	nop			; 2
+		nop			; 2
+
+c1val		equ *+1
+		adda #$00		; 2
+
+		anda #$fc		; 2
+		sta ,u			; 4
+		leax -1,x		; 4
+		bne playfrag_loop	; 3
+					; total 59 cycles
+
+		; - - - - - - - - - - - - - - - - - - - - - - -
+
+		lda #$35
+		sta reg_pia1_crb	; disable sound mux
+
+		lda #1
+		tfr a,dp
+		setdp 1
+		rts
+
+snd_play	ldb sound
+		beq 10F
+		ldb c1pri
+		beq snd_play_c1
+		ldb c2pri
+		beq snd_play_c2
+		cmpa c1pri
+		bhi snd_play_c1
+		cmpa c2pri
+		bls 10F
+snd_play_c2	sta c2pri
+		ldd ,x++
+		std c2wave
+		stx c2env
+		ldd #$0000
+		std c2off
+10		rts
+snd_play_c1	sta c1pri
+		ldd ,x++
+		std c1wave
+		stx c1env
+		ldd #$0000
+		std c1off
+		rts
+
+snw_sqr		equ $8012	; (anda) #$80, nop
+snw_saw		equ $FF44	; (anda) #$ff, lsra
+
+snv3		equ $1212	; nop,nop
+snv2		equ $1244	; nop,lsra
+snv1		equ $4444	; lsra,lsra
+snv0		equ $124f	; nop,clra
+
+		DATA
+snd_key		fdb snw_sqr
+		fdb g6,snv2,g6,snv1
+		fdb 0
+
+snd_monster_die	fdb snw_saw
+		fdb c4,snv3,c4,snv2
+		fdb e4,snv3,e4,snv2
+		fdb c4,snv3,c4,snv2
+		fdb e4,snv2,e4,snv1
+		fdb e4,snv2,e4,snv1
+		fdb 0
+
+snd_drainer	fdb snw_saw
+		fdb g2,snv2,g1,snv2
+		fdb g2,snv2,g1,snv2
+		fdb g2,snv2,g1,snv2
+		fdb g2,snv2,g1,snv2
+		fdb 0
+
+snd_low		fdb snw_saw
+		fdb c4,snv1,c4,snv2
+		fdb c4+20,snv2,c4+20,snv2
+		fdb c4,snv3,c4,snv3
+		fdb c4+20,snv3,c4+20,snv3
+		fdb 0
+
+snd_money	fdb snw_sqr
+		fdb c7,snv2,c7,snv3
+		fdb c7-20,snv3,c7-20,snv3
+		fdb c7,snv2,c7,snv2
+		fdb c7-20,snv1,c7-20,snv1
+		fdb 0
+
+snd_fire	fdb snw_saw
+		fdb c5,snv1,c5,snv2
+		fdb 0
+
+snd_door	fdb snw_saw
+		fdb f5,snv3,f5,snv3
+		fdb f4,snv2,f4,snv2
+		fdb f4,snv2,f4,snv1
+		fdb 0
+
+snd_food	fdb snw_saw
+		fdb g5,snv3,g5,snv2
+		fdb g5+20,snv3,g5+20,snv2
+		fdb g4,snv3,g4,snv2
+		fdb g4+20,snv3,g4+20,snv2
+		fdb 0
+
+snd_magic	fdb snw_saw
+		fdb c4,snv3,c4,snv1
+		fdb e4,snv3,e4,snv1
+		fdb c5,snv3,c5,snv1
+		fdb c5,snv3,c5,snv1
+		fdb c4,snv3,c4,snv1
+		fdb e4,snv3,e4,snv1
+		fdb c5,snv2,c5,snv1
+		fdb c5,snv2,c5,snv1
+		fdb c4,snv2,c4,snv1
+		fdb e4,snv2,e4,snv1
+		fdb c5,snv2,c5,snv1
+		fdb c5,snv2,c5,snv1
+		fdb c4,snv1,c4,snv1
+		fdb e4,snv1,e4,snv1
+		fdb c5,snv1,c5,snv1
+		fdb c5,snv1,c5,snv1
+		fdb 0
+
+snd_exit	fdb snw_saw
+		fdb c7,snv3,c7/2,snv3
+		fdb (c7+b6)/2,snv3,(c7+b6)/2,snv3
+		fdb b6,snv3,b6,snv3
+		fdb (b6+as6)/2,snv3,(b6+as6)/2,snv3
+		fdb as6,snv3,as6,snv3
+		fdb (as6+a6)/2,snv3,(as6+a6)/2,snv3
+		fdb a6,snv3,a6,snv3
+		fdb (a6+gs6)/2,snv3,(a6+gs6)/2,snv3
+		fdb gs6,snv3,gs6,snv3
+		fdb (gs6+g6)/2,snv3,(gs6+g6)/2,snv3
+		fdb g6,snv3,g6,snv3
+		fdb (g6+fs6)/2,snv3,(g6+fs6)/2,snv3
+		fdb fs6,snv3,fs6,snv3
+		fdb (fs6+f6)/2,snv3,(fs6+f6)/2,snv3
+		fdb f6,snv3,f6,snv3
+		fdb (f6+e6)/2,snv3,(f6+e6)/2,snv3
+		fdb e6,snv3,e6,snv3
+		fdb (e6+ds6)/2,snv3,(e6+ds6)/2,snv3
+		fdb ds6,snv3,ds6,snv3
+		fdb (ds6+d6)/2,snv3,(ds6+d6)/2,snv3
+		fdb d6,snv2,d6,snv2
+		fdb (d6+cs6)/2,snv2,(d6+cs6)/2,snv2
+		fdb cs6,snv1,cs6,snv1
+		fdb (cs6+c6)/2,snv1,(cs6+c6)/2,snv1
+		fdb 0
+
+snd_tport	fdb snw_saw
+		fdb cs5,snv1,ds5,snv1
+		fdb f5,snv1,g5,snv1
+		fdb a5,snv1,b5,snv1
+		fdb c6,snv1
+		fdb cs5,snv2
+		fdb ds5,snv2,f5,snv2
+		fdb g5,snv2,a5,snv2
+		fdb b5,snv2,c6,snv2
+		fdb cs5,snv3,ds5,snv3
+		fdb f5,snv3,g5,snv3
+		fdb a5,snv3,b5,snv3
+		fdb c6,snv3
+		fdb cs5,snv3,ds5,snv3
+		fdb f5,snv3,g5,snv3
+		fdb a5,snv3,b5,snv3
+		fdb c6,snv3
+		fdb cs5,snv3,ds5,snv3
+		fdb f5,snv3,g5,snv3
+		fdb a5,snv3,b5,snv3
+		fdb c6,snv3
+		fdb cs5,snv2,ds5,snv2
+		fdb f5,snv2,g5,snv2
+		fdb a5,snv2,b5,snv2
+		fdb c6,snv2
+		fdb cs5,snv1
+		fdb ds5,snv1,f5,snv1
+		fdb g5,snv1,a5,snv1
+		fdb b5,snv1,c6,snv1
+		fdb 0
+		CODE
+
+; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
 ; Main game loop
 
 mainloop
@@ -330,11 +603,16 @@ mainloop
 		bvc 30F
 		ldx #tile_drainer0_a
 		ldu #tile_drainer0_b
+		ldy #tile_chalice_nw0_a
 		bra 20F
 10		ldx #tile_drainer1_a
 		ldu #tile_drainer1_b
+		ldy #tile_chalice_nw1_a
 20		stx mod_drainer_a
 		stu mod_drainer_b
+		sty mod_chalice
+mod_draw_chalice_0
+		jsr update_chalice
 30		sta anim_count
 
 		; spawn new monsters
@@ -355,7 +633,17 @@ mainloop
 		jsr process_monsters
 		jsr process_players
 		jsr process_shots
-		bsr playfrag
+		jsr play2frags
+
+		ldb #$7f40
+		sta reg_pia0_pdrb
+		bitb reg_pia0_pdra	; SHIFT?
+		bne 60F
+		lda #$fb
+		sta reg_pia0_pdrb
+		bitb reg_pia0_pdra	; BREAK?
+		beq 99F
+60
 
 		lda finished
 		ora dead
@@ -378,122 +666,41 @@ game_over_screen
 		bne 10B
 		leax -1,x
 		bne 10B
-		jmp game_reset
+99		jmp game_reset
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-		DATA
-eops		fcb $12,$12	; nop,nop
-		fcb $12,$12	; nop,nop
-		fcb $12,$12	; nop,nop
-		fcb $12,$44	; nop,lsra
-		fcb $12,$44	; nop,lsra
-		fcb $12,$44	; nop,lsra
-		fcb $44,$44	; lsra,lsra
-		fcb $44,$44	; lsra,lsra
-		CODE
+; First state while changing room.  Initialises player window with map
+; outline: stone & floor.  Next state will draw all objects.
 
-playfrag_zip
-		std c1freq
-		ldd #$ffe8
-		std c1efreq
-		clr c1eoff
-		clr c1length
-		; fall through to playfrag
-
-; Sound mixer.  Two channels.  C1 is a sawtooth wave with envelope, C2 is
-; a simple square wave.
-
-playfrag
-		ldy #200		; fragment length
-		ldu #eops		; envelope ops for C1
-
-		ldd c1freq
-		bne 3F
-		ldd c2freq
-		bne 3F
-		bra 5F
-3		ldb #$3d
-		stb reg_pia1_crb	; enable sound mux
-5
-
-10
-
-c1eoff		equ *+1
-                ldd #$0000
-c1efreq		equ *+1
-                addd #$0000
-		std c1eoff
-		anda #$0e
-		ldd a,u
-		std mod_eop
-
-c1off		equ *+1
-                ldd #$0000
-c1freq		equ *+1
-                addd #$0000
-		std c1off
-		lsra
-
-mod_eop		nop
-		nop
-		sta 18F
-
-c2off		equ *+1
-                ldd #$0000
-c2freq		equ *+1
-                addd #$0000
-		std c2off
-		anda #$80
-
-18		equ *+1
-		ora #$00
-
-		anda sound
-		sta reg_pia1_pdra
-		leay -1,y
-		bne 10B
-
-		clr reg_pia1_pdra	; zero DAC
-
-		lda #$35
-		sta reg_pia1_crb	; disable sound mux
-
-		clrb
-		lda c1length
-		bmi 20F
-		deca
-		sta c1length
-		bpl 20F
-		clra
-		std c1freq
-		sta c1off
-20
-
-		lda c2length
-		bmi 30F
-		deca
-		sta c2length
-		bpl 30F
-		clra
-		std c2freq
-		sta c2off
-30
-
-		rts
-
-; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-; Possible optimisation: stones in tileset A are full-width, and contain
-; floor bitmap in the rightmost part.  Always going to render the next
-; one, and in that case rendering floor in position B becomes single byte
-; op.  More RAM used for renderer though.
-
-; render 8x8 window
-; entry:
+; Entry:
 ;     x -> screen
 ;     u -> player struct
 ; uses: tmp1, tmp3
+
+DRAW_ROW_A_FAST	macro
+		ldd ,u++
+		std \1,x
+		endm
+
+DRAW_LAST_ROW_A_FAST	macro
+		ldd ,u
+		std \1,x
+		endm
+
+DRAW_ROW_B_FAST	macro
+		lda \1,x
+		clrb
+		addd ,u++
+		std \1,x
+		endm
+
+DRAW_LAST_ROW_B_FAST	macro
+		lda \1,x
+		clrb
+		addd ,u
+		std \1,x
+		endm
 
 plr_draw_room
 		ldb spr_next_y,u
@@ -504,33 +711,52 @@ plr_draw_room
 		lda #win_h
 		sta tmp1
 		pshs u
-yloop
-		lda ,y+
+10		lda ,y+
 		sta tmp3
 		lda #win_w/2
 		sta tmp1+1
-xloop
+
+20
 		; even tiles
 		ldu #tile_floor_a
 		lsl tmp3
-		bcc 10F
-		ldu stone_a
-10		bsr single_tile_x_a
+		bcc 30F
+mod_stone_a	equ *+1
+		ldu #$0000
+30		DRAW_ROW_A_FAST -128
+		DRAW_ROW_A_FAST -96
+		DRAW_ROW_A_FAST -64
+		DRAW_ROW_A_FAST -32
+		DRAW_ROW_A_FAST 0
+		DRAW_ROW_A_FAST 32
+		DRAW_ROW_A_FAST 64
+		DRAW_ROW_A_FAST 96
+		DRAW_LAST_ROW_A_FAST 128
 
 		; odd tiles
 		leax 1,x
 		ldu #tile_floor_b
 		lsl tmp3
-		bcc 30F
-		ldu stone_b
-30		jsr single_tile_x_b
+		bcc 40F
+mod_stone_b	equ *+1
+		ldu #$0000
+40		DRAW_ROW_B_FAST -128
+		DRAW_ROW_B_FAST -96
+		DRAW_ROW_B_FAST -64
+		DRAW_ROW_B_FAST -32
+		DRAW_ROW_B_FAST 0
+		DRAW_ROW_B_FAST 32
+		DRAW_ROW_B_FAST 64
+		DRAW_ROW_B_FAST 96
+		DRAW_LAST_ROW_B_FAST 128
 
 		leax 2,x
 		dec tmp1+1
-		bne xloop
+		lbne 20B
+
 		leax (9*fb_w)-12,x
 		dec tmp1
-		bne yloop
+		lbne 10B
 		puls u
 		jmp spr_inc_state
 
@@ -600,7 +826,42 @@ single_tile_x_b
 		DRAW_ROW_B 64
 		DRAW_ROW_B 96
 		DRAW_LAST_ROW_B 128
-		rts
+99		rts
+
+plr_update_chalice
+		ldb plr_yroom,u
+plr_update_chalice_b
+		andb #$f8
+		cmpb #$10
+		bne 99B
+10		ldx plr_win,u
+		leax $0483,x
+		; fall through to draw_chalice
+
+mod_chalice	equ *+1
+draw_chalice	ldu #tile_chalice_nw0_a
+		jsr single_tile_x_a
+		leau 2,u
+		leax 9*fb_w,x
+		jsr single_tile_x_a
+		leau tile_chalice_ne0_b-tile_chalice_sw0_a-16,u
+		leax -9*fb_w+1,x
+		jsr single_tile_x_b
+		leau 2,u
+		leax 9*fb_w,x
+		jmp single_tile_x_b
+
+update_chalice
+		pshs a
+		ldu #player1
+		bsr plr_update_chalice
+		ldu #player2
+		bsr plr_update_chalice
+		ldu #player3
+		bsr plr_update_chalice
+		ldu #player4
+		bsr plr_update_chalice
+		puls a,pc
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -734,10 +995,14 @@ start_game
 		; flag all players as "dead" so they get reset
 		lda #$ff
 		sta dead
+
 		; level -1: will be incremented before use
 		sta level
-
 cheat
+
+;		bra 10F
+;cheat		lda #23
+;10		sta level
 
 		; SAM VDG mode = G6R,G6C
 		;sta reg_sam_v0c
@@ -770,13 +1035,19 @@ level_setup
 		blo 1B
 
 		ldu #levels
+		ldb #$8c	; cmpx
 		lda level
 		inca
-		cmpa #25
+		cmpa #24
+		beq 4F
 		blo 5F
 		ldx #end_screen_dz
 		jmp game_over_screen
-5		sta level
+4		ldb #$bd	; jsr
+5		stb mod_draw_chalice_0
+		stb mod_draw_chalice_1
+		stb mod_check_chalice
+		sta level
 		lsla
 		ldx #bmp_wall_end
 		stx dzip_end	; dzip end
@@ -789,16 +1060,12 @@ level_setup
 		blo 10B
 
 		lda level
-		cmpa #12
-		blo 10F
-		suba #12
-10		ldb #18
+		ldb #18
 		mul
-		ldx #tile_stone01_a
-		leax d,x
-		stx stone_a
-		leax tiles_b_start-tiles_a_start,x
-		stx stone_b
+		addd #tile_stone01_a
+		std mod_stone_a
+		addd #tiles_b_start-tiles_a_start
+		std mod_stone_b
 
 		ldu #levelcache
 		ldy #objects
@@ -1062,6 +1329,17 @@ plr_setup
 		clr dead		; clear remaining bits
 		ldx #death_fifo		; initialise death fifo
 		stx death_fifo_end
+
+		clra
+		clrb
+		ldx #c1freq
+		stx c1env
+		std ,x
+		ldx #c2freq
+		stx c2env
+		std ,x
+		sta c1pri
+		sta c2pri
 		rts
 
 		DATA
@@ -1168,47 +1446,12 @@ plr_scan_controls
 
 		; player 3 - left joystick
 		ldu #player3
-		ldd #$3d34
+		ldd #$3d3c
 		sta reg_pia0_crb	; left joystick
-		stb reg_pia0_cra	; x axis
-10		lda #$20
-		sta reg_pia1_pdra
-		lda reg_pia0_pdra
-		bmi 20F
-		lda #$80|facing_left	; left
-		bra 80F
-20		ldd #$ffc0
+		stb reg_pia0_cra	; y axis
+10		ldd #$0040
 		sta reg_pia1_pdra
 		stb reg_pia1_pdra
-		lda reg_pia0_pdra
-		bpl 30F
-		lda #$80|facing_right	; right
-		bra 80F
-30		lda #$3c
-		sta reg_pia0_cra	; y axis
-		lda reg_pia0_pdra
-		bpl 40F
-		lda #$80|facing_down	; down
-		bra 80F
-40		neg reg_pia1_pdra
-		lda reg_pia0_pdra
-		bmi 50F
-		lda #$80|facing_up	; up
-		bra 80F
-50		lda reg_pia0_pdra
-		bita #$02
-		bne 90F
-		lda #1			; fire
-80		sta plr_control,u
-90
-
-		; player 4 - right joystick
-		ldu #player4
-		ldd #$353c
-		sta reg_pia0_crb	; right joystick
-		stb reg_pia0_cra	; y axis
-10		lda #$20
-		sta reg_pia1_pdra
 		lda reg_pia0_pdra
 		bmi 20F
 		lda #$80|facing_up	; up
@@ -1226,7 +1469,48 @@ plr_scan_controls
 		bpl 40F
 		lda #$80|facing_right	; right
 		bra 80F
-40		neg reg_pia1_pdra
+40		ldd #$0040
+		sta reg_pia1_pdra
+		stb reg_pia1_pdra
+		lda reg_pia0_pdra
+		bmi 50F
+		lda #$80|facing_left	; left
+		bra 80F
+50		lda reg_pia0_pdra
+		bita #$02
+		bne 90F
+		lda #1			; fire
+80		sta plr_control,u
+90
+
+		; player 4 - right joystick
+		ldu #player4
+		ldd #$353c
+		sta reg_pia0_crb	; right joystick
+		stb reg_pia0_cra	; y axis
+10		ldd #$0040
+		sta reg_pia1_pdra
+		stb reg_pia1_pdra
+		lda reg_pia0_pdra
+		bmi 20F
+		lda #$80|facing_up	; up
+		bra 80F
+20		ldd #$ffc0
+		sta reg_pia1_pdra
+		stb reg_pia1_pdra
+		lda reg_pia0_pdra
+		bpl 30F
+		lda #$80|facing_down	; down
+		bra 80F
+30		lda #$34
+		sta reg_pia0_cra	; x axis
+		lda reg_pia0_pdra
+		bpl 40F
+		lda #$80|facing_right	; right
+		bra 80F
+40		ldd #$0040
+		sta reg_pia1_pdra
+		stb reg_pia1_pdra
 		lda reg_pia0_pdra
 		bmi 50F
 		lda #$80|facing_left	; left
@@ -1766,6 +2050,10 @@ spr_undraw_v
 		ldb obj_x,u
 		jmp obj_draw_vxt
 
+; Second state while changing room.  Draws all objects once.
+; Subsequently, keys and animated objects are redrawn, anything else is
+; only redrawn as part of undrawing a sprite.
+
 plr_draw_objects
 		bsr spr_undraw		; from other windows
 		ldd plr_win,u
@@ -1773,6 +2061,8 @@ plr_draw_objects
 		ldb spr_next_y,u
 		stb 15F
 		pshs u
+mod_draw_chalice_1
+		jsr plr_update_chalice_b
 		; draw objects
 		ldy #objects
 10		lda obj_tile,y
@@ -1878,6 +2168,8 @@ plr_centred
 		sta tmp0
 		jsr spr_move
 		beq 10F
+mod_check_chalice
+		jsr check_chalice
 		cmpd plr_key_opens,u
 		bne 30F
 		jmp plr_open_door
@@ -1954,12 +2246,9 @@ plr_fire
 		std obj_woff,y
 		stu obj_shot_plr,y
 
-		clr c1length
-		ldd #2000
-		std c1freq
-		ldd #$ffe8
-		std c1efreq
-		clr c1eoff
+		lda #1		; priority
+		ldx #snd_fire
+		jsr snd_play
 
 		jmp obj_draw	; draw player
 
@@ -2003,6 +2292,9 @@ plr_magic
 30		leay sizeof_mon,y
 		cmpy #monsters_end
 		blo 25B
+		lda #$ff	; highest priority
+		ldx #snd_magic
+		jsr snd_play
 		; step monsters through death and play magic sound fx
 		pshs u
 		bsr mon_step
@@ -2023,14 +2315,10 @@ mon_step	ldu #monsters
 		cmpu #monsters_end
 		blo 10B
 		; funny sound
-		ldd #1800
-		jsr playfrag_zip
-		ldd #2700
-		jsr playfrag_zip
-		ldd #3600
-		jsr playfrag_zip
-		ldd #4500
-		jsr playfrag_zip
+		jsr play2frags
+		jsr play2frags
+		jsr play2frags
+		jsr play2frags
 		rts
 
 plr_open_door
@@ -2048,20 +2336,23 @@ plr_open_door
 		stb a,x
 		ldd #$8080
 		std plr_key_opens,u
-		lda #1
-		sta c1length
-		ldd #5000
-		std c1freq
-		ldd #$ffc0
-		std c1efreq
-		clr c1eoff
+		lda #1		; priority
+		ldx #snd_door
+		jsr snd_play
 		lda #7
 		jsr plr_add_score
 		jsr plr_undraw_key
 plr_inactive	rts
 
 process_players
-		ldu #players
+		lda level
+		cmpa #24
+		bne 5F
+		; special-case finishing level 25
+		lda playing
+		eora #$0f
+		sta finished
+5		ldu #players
 10		lda spr_state,u
 		bmi 20F
 		lda spr_state,u
@@ -2113,6 +2404,24 @@ plr_undying
 		anda dead
 		sta dead
 		jmp plr_draw_hp
+
+check_chalice	pshs a
+		cmpa #$14
+		blo 10F
+		cmpa #$15
+		bhi 10F
+		cmpb #2
+		blo 10F
+		cmpb #3
+		bhi 10F
+		lda plr_bit,u
+		ora finished
+		bra 20F
+10		lda plr_bit,u
+		coma
+		anda finished
+20		sta finished
+		puls a,pc
 
 		DATA
 jtbl_player_state
@@ -2290,10 +2599,9 @@ shot_hit_monster
 		lda spr_hp,y
 		suba plr_power,u
 		bcc 10F
-		lda #5
-		sta c2length
-		ldd #200
-		std c2freq
+		lda #2		; priority
+		ldx #snd_monster_die
+		jsr snd_play
 		ldd #$0100|state_mon_die	; 1pt for monster
 		stb spr_state,y
 		jsr plr_add_score
@@ -2329,10 +2637,9 @@ shot_drainer
 
 		; not a pickup: drain health
 pickup_drainer
-		lda #4
-		sta c2length
-		ldd #450
-		std c2freq
+		lda #1		; priority
+		ldx #snd_drainer
+		jsr snd_play
 		bsr kill_speed
 		ldb spr_hp,u
 		subb #$20
@@ -2353,13 +2660,9 @@ pickup_potion
 		jmp plr_draw_hp
 
 pickup_food
-		lda #2
-		sta c1length
-		ldd #8000
-		std c1freq
-		ldd #$0004
-		std c1efreq
-		sta c1eoff
+		lda #1		; priority
+		ldx #snd_food
+		jsr snd_play
 		lda spr_hp,u
 		adda #$10
 		daa
@@ -2403,24 +2706,15 @@ pickup_weapon
 		jmp plr_draw_ammo
 
 sound_low
-		lda #3
-		sta c1length
-		ldd #1000
-		std c1freq
-		ldd #$fffc
-		std c1efreq
-		lda #$1e
-		sta c1eoff
+		lda #1		; priority
+		ldx #snd_low
+		jsr snd_play
 		bra kill_speed
 
 pickup_money
-		lda #3
-		sta c1length
-		ldd #9000
-		std c1freq
-		ldd #$0004
-		std c1efreq
-		sta c1eoff
+		lda #1		; priority
+		ldx #snd_money
+		jsr snd_play
 		bra kill_speed
 
 pickup_cross
@@ -2452,12 +2746,9 @@ pickup_speed
 		jmp plr_draw_speed
 
 pickup_key
-		clr c1length
-		ldd #16500
-		std c1freq
-		ldd #$0002
-		std c1efreq
-		sta c1eoff
+		lda #3		; priority
+		ldx #snd_key
+		jsr snd_play
 		ldd plr_key_opens,u
 		ldx obj_key_opens,y
 		stx plr_key_opens,u
@@ -2471,6 +2762,9 @@ pickup_key
 
 		; not a pickup: teleport player
 pickup_tport
+		lda #3		; priority
+		ldx #snd_tport
+		jsr snd_play
 		ldx obj_y,y
 10		leay sizeof_obj,y
 		cmpy #items_end
@@ -2521,6 +2815,9 @@ pickup_exit
 		ldd #tbl_exit_data
 		std spr_tmp0,u
 		jsr kill_speed
+		lda #3		; priority
+		ldx #snd_exit
+		jsr snd_play
 		leas 3,s	; skip return address, stacked object type
 		puls x,y,pc
 20		rts
@@ -2537,10 +2834,6 @@ plr_exit0
 		lda ,x+
 		adda spr_tilebase,u
 		sta obj_tile,u
-		ldd ,x++
-		std c2freq
-		lda #1
-		sta c2length
 		stx spr_tmp0,u
 		jsr spr_draw_cx
 		jmp spr_inc_state
@@ -2558,29 +2851,17 @@ plr_exit0
 
 		DATA
 tbl_exit_data	fcb p1_up0-p1_tilebase
-		fdb 18000
 		fcb p1_right0-p1_tilebase
-		fdb 15868
 		fcb p1_down0-p1_tilebase
-		fdb 13989
 		fcb p1_left0-p1_tilebase
-		fdb 12333
 		fcb p1_exit4-p1_tilebase
-		fdb 10872
 		fcb p1_exit5-p1_tilebase
-		fdb 9585
 		fcb p1_exit6-p1_tilebase
-		fdb 8450
 		fcb p1_exit7-p1_tilebase
-		fdb 7449
 		fcb p1_exit8-p1_tilebase
-		fdb 6567
 		fcb p1_exit9-p1_tilebase
-		fdb 5789
 		fcb p1_exit10-p1_tilebase
-		fdb 5104
 		fcb p1_exit11-p1_tilebase
-		fdb 4500
 tbl_exit_data_end
 		CODE
 
@@ -2733,135 +3014,134 @@ levels
 tiles_a_start
 		include "tiles.s"
 tiles_a_end
-
-TILE_NEGATIVE	macro
-		fdb tile_door_v_\1
-		fdb tile_door_h_\1
-		endm
-
-TILE_LIST	macro
-		fdb tile_floor_\1
-		fdb tile_exit_\1
-		fdb tile_trapdoor_\1
-		fdb tile_money_\1
-		fdb tile_food_\1
-		fdb tile_tport_\1
-		fdb tile_power_\1
-		fdb tile_armour_\1
-		fdb tile_potion_\1
-		fdb tile_weapon_\1
-		fdb tile_cross_\1
-		fdb tile_speed_\1
-mod_drainer_\1	fdb tile_drainer0_\1
-		fdb tile_key_\1
-
-		fdb tile_p1_up0_\1
-		fdb tile_p1_up1_\1
-		fdb tile_p1_down0_\1
-		fdb tile_p1_down1_\1
-		fdb tile_p1_left0_\1
-		fdb tile_p1_left1_\1
-		fdb tile_p1_right0_\1
-		fdb tile_p1_right1_\1
-		fdb tile_arrow_up_\1
-		fdb tile_arrow_down_\1
-		fdb tile_arrow_left_\1
-		fdb tile_arrow_right_\1
-		fdb tile_p1_exit4_\1
-		fdb tile_p1_exit5_\1
-		fdb tile_p1_exit6_\1
-		fdb tile_p1_exit7_\1
-		fdb tile_exit8_\1
-		fdb tile_exit9_\1
-		fdb tile_exit10_\1
-		fdb tile_exit11_\1
-
-		fdb tile_p2_up0_\1
-		fdb tile_p2_up1_\1
-		fdb tile_p2_down0_\1
-		fdb tile_p2_down1_\1
-		fdb tile_p2_left0_\1
-		fdb tile_p2_left1_\1
-		fdb tile_p2_right0_\1
-		fdb tile_p2_right1_\1
-		fdb tile_fball_up_\1
-		fdb tile_fball_down_\1
-		fdb tile_fball_left_\1
-		fdb tile_fball_right_\1
-		fdb tile_p2_exit4_\1
-		fdb tile_p2_exit5_\1
-		fdb tile_p2_exit6_\1
-		fdb tile_p2_exit7_\1
-		fdb tile_exit8_\1
-		fdb tile_exit9_\1
-		fdb tile_exit10_\1
-		fdb tile_exit11_\1
-
-		fdb tile_p3_up0_\1
-		fdb tile_p3_up1_\1
-		fdb tile_p3_down0_\1
-		fdb tile_p3_down1_\1
-		fdb tile_p3_left0_\1
-		fdb tile_p3_left1_\1
-		fdb tile_p3_right0_\1
-		fdb tile_p3_right1_\1
-		fdb tile_axe_up_\1
-		fdb tile_axe_down_\1
-		fdb tile_axe_left_\1
-		fdb tile_axe_right_\1
-		fdb tile_p3_exit4_\1
-		fdb tile_p3_exit5_\1
-		fdb tile_p3_exit6_\1
-		fdb tile_p3_exit7_\1
-		fdb tile_exit8_\1
-		fdb tile_exit9_\1
-		fdb tile_exit10_\1
-		fdb tile_exit11_\1
-
-		fdb tile_p4_up0_\1
-		fdb tile_p4_up1_\1
-		fdb tile_p4_down0_\1
-		fdb tile_p4_down1_\1
-		fdb tile_p4_left0_\1
-		fdb tile_p4_left1_\1
-		fdb tile_p4_right0_\1
-		fdb tile_p4_right1_\1
-		fdb tile_sword_up_\1
-		fdb tile_sword_down_\1
-		fdb tile_sword_left_\1
-		fdb tile_sword_right_\1
-		fdb tile_p4_exit4_\1
-		fdb tile_p4_exit5_\1
-		fdb tile_p4_exit6_\1
-		fdb tile_p4_exit7_\1
-		fdb tile_exit8_\1
-		fdb tile_exit9_\1
-		fdb tile_exit10_\1
-		fdb tile_exit11_\1
-
-		fdb tile_monster_up0_\1
-		fdb tile_monster_up1_\1
-		fdb tile_monster_down0_\1
-		fdb tile_monster_down1_\1
-		fdb tile_monster_left0_\1
-		fdb tile_monster_left1_\1
-		fdb tile_monster_right0_\1
-		fdb tile_monster_right1_\1
-
-		fdb tile_bones0_\1
-		fdb tile_bones1_\1
-		fdb tile_bones2_\1
-		fdb tile_bones3_\1
-		fdb tile_bones4_\1
-		fdb tile_bones5_\1
-		fdb tile_bones6_\1
-		fdb tile_bones7_\1
-		endm
+		include "chalice.s"
 
 tbl_tiles_a_start
-		TILE_NEGATIVE a
-tbl_tiles_a	TILE_LIST a
+
+		fdb tile_door_v_a
+		fdb tile_door_h_a
+
+tbl_tiles_a
+
+		fdb tile_floor_a
+		fdb tile_exit_a
+		fdb tile_trapdoor_a
+		fdb tile_money_a
+		fdb tile_food_a
+		fdb tile_tport_a
+		fdb tile_power_a
+		fdb tile_armour_a
+		fdb tile_potion_a
+		fdb tile_weapon_a
+		fdb tile_cross_a
+		fdb tile_speed_a
+mod_drainer_a	fdb tile_drainer0_a
+		fdb tile_key_a
+
+		fdb tile_p1_up0_a
+		fdb tile_p1_up1_a
+		fdb tile_p1_down0_a
+		fdb tile_p1_down1_a
+		fdb tile_p1_left0_a
+		fdb tile_p1_left1_a
+		fdb tile_p1_right0_a
+		fdb tile_p1_right1_a
+		fdb tile_arrow_up_a
+		fdb tile_arrow_down_a
+		fdb tile_arrow_left_a
+		fdb tile_arrow_right_a
+		fdb tile_p1_exit4_a
+		fdb tile_p1_exit5_a
+		fdb tile_p1_exit6_a
+		fdb tile_p1_exit7_a
+		fdb tile_exit8_a
+		fdb tile_exit9_a
+		fdb tile_exit10_a
+		fdb tile_exit11_a
+
+		fdb tile_p2_up0_a
+		fdb tile_p2_up1_a
+		fdb tile_p2_down0_a
+		fdb tile_p2_down1_a
+		fdb tile_p2_left0_a
+		fdb tile_p2_left1_a
+		fdb tile_p2_right0_a
+		fdb tile_p2_right1_a
+		fdb tile_fball_up_a
+		fdb tile_fball_down_a
+		fdb tile_fball_left_a
+		fdb tile_fball_right_a
+		fdb tile_p2_exit4_a
+		fdb tile_p2_exit5_a
+		fdb tile_p2_exit6_a
+		fdb tile_p2_exit7_a
+		fdb tile_exit8_a
+		fdb tile_exit9_a
+		fdb tile_exit10_a
+		fdb tile_exit11_a
+
+		fdb tile_p3_up0_a
+		fdb tile_p3_up1_a
+		fdb tile_p3_down0_a
+		fdb tile_p3_down1_a
+		fdb tile_p3_left0_a
+		fdb tile_p3_left1_a
+		fdb tile_p3_right0_a
+		fdb tile_p3_right1_a
+		fdb tile_axe_up_a
+		fdb tile_axe_down_a
+		fdb tile_axe_left_a
+		fdb tile_axe_right_a
+		fdb tile_p3_exit4_a
+		fdb tile_p3_exit5_a
+		fdb tile_p3_exit6_a
+		fdb tile_p3_exit7_a
+		fdb tile_exit8_a
+		fdb tile_exit9_a
+		fdb tile_exit10_a
+		fdb tile_exit11_a
+
+		fdb tile_p4_up0_a
+		fdb tile_p4_up1_a
+		fdb tile_p4_down0_a
+		fdb tile_p4_down1_a
+		fdb tile_p4_left0_a
+		fdb tile_p4_left1_a
+		fdb tile_p4_right0_a
+		fdb tile_p4_right1_a
+		fdb tile_sword_up_a
+		fdb tile_sword_down_a
+		fdb tile_sword_left_a
+		fdb tile_sword_right_a
+		fdb tile_p4_exit4_a
+		fdb tile_p4_exit5_a
+		fdb tile_p4_exit6_a
+		fdb tile_p4_exit7_a
+		fdb tile_exit8_a
+		fdb tile_exit9_a
+		fdb tile_exit10_a
+		fdb tile_exit11_a
+
+		fdb tile_monster_up0_a
+		fdb tile_monster_up1_a
+		fdb tile_monster_down0_a
+		fdb tile_monster_down1_a
+		fdb tile_monster_left0_a
+		fdb tile_monster_left1_a
+		fdb tile_monster_right0_a
+		fdb tile_monster_right1_a
+
+		fdb tile_bones0_a
+		fdb tile_bones1_a
+		fdb tile_bones2_a
+		fdb tile_bones3_a
+		fdb tile_bones4_a
+		fdb tile_bones5_a
+		fdb tile_bones6_a
+		fdb tile_bones7_a
+
 tbl_tiles_a_end
+
 sizeof_tbl_tiles_a	equ tbl_tiles_a_end-tbl_tiles_a_start
 
 tiles_b_start
@@ -3030,14 +3310,15 @@ ntsc_phase0
 		jsr apply_patches
 		ldx #ntsc_palette0	; Palette-swap tiles
 		ldu #tiles_a_start
-10		jsr palette_swap_u
-		jsr palette_swap_u
-		anda #$f0
-		sta -1,u
-		cmpu #tiles_a_end
+10		bsr palette_swap_a
+		cmpu #all_tiles_a_end
 		blo 10B
+		bsr palette_swap_b	; chalice_ne0
+		bsr palette_swap_b	; chalice_se0
+		bsr palette_swap_b	; chalice_ne1
+		bsr palette_swap_b	; chalice_se1
 		ldu #lnum_tiles_start	; Palette-swap large numbers
-20		jsr palette_swap_u
+20		bsr palette_swap_u
 		cmpu #lnum_tiles_end
 		blo 20B
 		ldx #ntsc_palette1	; Palette-swap small numbers
@@ -3052,7 +3333,7 @@ ntsc_done
 		ldu #tbl_tiles_a_start
 		ldx #tbl_tiles_b_start
 10		pulu d
-		addd #tbl_tiles_b_start-tbl_tiles_a_start
+		addd #tiles_b_start-tiles_a_start
 		std ,x++
 		cmpu #tbl_tiles_a_end
 		blo 10B
@@ -3090,10 +3371,29 @@ apply_patches	ldb ,u+
 		bne 10B
 		rts
 
+palette_swap_a	ldb #9
+10		bsr palette_swap_u
+		bsr palette_swap_u
+		anda #$f0
+		sta -1,u
+		decb
+		bne 10B
+		rts
+
+palette_swap_b	ldb #9
+10		bsr palette_swap_u
+		anda #$0f
+		sta -1,u
+		bsr palette_swap_u
+		decb
+		bne 10B
+		rts
+
 ; Simple palette shifter - optimised version delicately lifted from
 ; Stewart Orchard's blog.
 
-palette_swap_u	lda ,u
+palette_swap_u	pshs b
+		lda ,u
 		ldb #4
 		stb tmp0
 10		clrb
@@ -3105,7 +3405,7 @@ palette_swap_u	lda ,u
 		dec tmp0
 		bne 10B
 		sta ,u+
-		rts
+		puls b,pc
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
