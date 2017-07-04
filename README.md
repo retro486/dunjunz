@@ -19,8 +19,8 @@ For binaries, check out the [home page].
 ## Building from source
 
 The build system very much depends on a Unix-like environment.  You'll need
-a C compiler and the development files for SDL\_image 1.2 to build
-tile2s.  Also required: [asm6809], [bin2cas.pl], [dzip].
+Perl for map2s.pl, and a C compiler plus the development files for SDL\_image
+1.2 to build tile2s.  Also required: [asm6809], [bin2cas.pl], [dzip].
 
 [asm6809]: http://www.6809.org.uk/asm6809/
 [bin2cas.pl]: http://www.6809.org.uk/dragon/#castools
