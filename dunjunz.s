@@ -1317,7 +1317,7 @@ start_game
 		ldd #$0492	; 4, 100-8(BCD)
 		sta mod_monster_hp
 		stb mod_mon_hit_player
-		ldd #$4590	; 69, 100-10(BCD)
+		ldd #$0990	; 9, 100-10(BCD)
 		bra 6F
 		; hard mode
 5		ldd #$0012	; 0, nop
@@ -1325,7 +1325,7 @@ start_game
 		stb mod_skill_key
 		ldd #$0890	; 8, 100-10(BCD)
 		sta mod_monster_hp
-		ldd #$6380	; 99, 100-20(BCD)
+		ldd #$0c80	; 12, 100-20(BCD)
 6		sta mod_drainer_hp
 		stb mod_drainer_dmg
 
@@ -1495,7 +1495,7 @@ mod_skill_key	inca
 		cmpa #drainer
 		bne 20F
 mod_drainer_hp	equ *+1
-		ldb #99
+		ldb #12
 		stb obj_drainer_hp,y
 20		bsr place_object
 30		dec tmp0
@@ -3116,11 +3116,9 @@ shot_drainer
 		ldu obj_shot_plr,u
 		lda #1
 		jsr plr_add_score
-		lda obj_drainer_hp,y
-		suba plr_power,u
-		sta obj_drainer_hp,y
 		puls x,u
-		bcc 35B
+		dec obj_drainer_hp,y
+		bne 35B
 		clr obj_tile,y
 		jsr check_clr_pickup
 		jmp 35B
