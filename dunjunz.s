@@ -1317,7 +1317,7 @@ start_game
 		ldd #$0492	; 4, 100-8(BCD)
 		sta mod_monster_hp
 		stb mod_mon_hit_player
-		ldd #$0e90	; 14, 100-10(BCD)
+		ldd #$4590	; 69, 100-10(BCD)
 		bra 6F
 		; hard mode
 5		ldd #$0012	; 0, nop
@@ -1325,7 +1325,7 @@ start_game
 		stb mod_skill_key
 		ldd #$0890	; 8, 100-10(BCD)
 		sta mod_monster_hp
-		ldd #$1480	; 20, 100-20(BCD)
+		ldd #$6380	; 99, 100-20(BCD)
 6		sta mod_drainer_hp
 		stb mod_drainer_dmg
 
@@ -1495,7 +1495,7 @@ mod_skill_key	inca
 		cmpa #drainer
 		bne 20F
 mod_drainer_hp	equ *+1
-		ldb #20
+		ldb #99
 		stb obj_drainer_hp,y
 20		bsr place_object
 30		dec tmp0
@@ -3116,9 +3116,11 @@ shot_drainer
 		ldu obj_shot_plr,u
 		lda #1
 		jsr plr_add_score
+		lda obj_drainer_hp,y
+		suba plr_power,u
+		sta obj_drainer_hp,y
 		puls x,u
-		dec obj_drainer_hp,y
-		bne 35B
+		bcc 35B
 		clr obj_tile,y
 		jsr check_clr_pickup
 		jmp 35B
@@ -3459,29 +3461,28 @@ jtbl_pickup	equ *-2			; no dispatch for floor
 ; entry: x = zip start, u = destination, [dzip_end] = end address
 
 dunzip
-dunz_loop	ldd	,x++
-		bpl	dunz_run	; run of 1-128 bytes
+dunz_loop	ldd ,x++
+		bpl dunz_run	; run of 1-128 bytes
 		tstb
-		bpl	dunz_7_7
-dunz_14_8	lslb			; drop top bit of byte 2
+		bpl dunz_7_7
+dunz_14_8	lslb		; drop top bit of byte 2
 		asra
-		rorb			; asrd
-		leay	d,u
-		ldb	,x+
-		bra	10F		; copy 1-256 bytes (0 == 256)
-dunz_7_7	leay	a,u		; copy 1-128 bytes
-10		lda	,y+
-		sta	,u+
+		rorb		; asrd
+		leay d,u
+		ldb ,x+
+		bra 10F		; copy 1-256 bytes (0 == 256)
+dunz_7_7	leay a,u	; copy 1-128 bytes
+10		lda ,y+
+		sta ,u+
 		incb
-		bvc	10B		; count UP until B == 128
-		bra	80F
-1		ldb	,x+
-dunz_run	stb	,u+
+		bvc 10B		; count UP until B == 128
+		bra 80F
+1		ldb ,x+
+dunz_run	stb ,u+
 		inca
-		bvc	1B		; count UP until B == 128
-zdata_end	equ	* + 1
-80		cmpu	<dzip_end
-		blo	dunz_loop
+		bvc 1B		; count UP until B == 128
+80		cmpu <dzip_end
+		blo dunz_loop
 		rts
 
 ; For menus: scan table of KEYDSP_ENTRY and jump to handler
@@ -3837,7 +3838,8 @@ all_objects_end
 
 		org BSS_start
 
-start
+		export INIT_exec
+INIT_exec
 		setdp 0			; assumed
 
 	if 0
@@ -4236,6 +4238,14 @@ ntsc_check_dz	includebin "ntsc-check.bin.dz"
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 ; Useful addresses for end of listing
+
+		export CODE_start
+		export CODE_end
+		export DATA_start
+		export DATA_end
+		export BSS_start
+		export BSS_end
+		export INIT_end
 
 		CODE
 CODE_start	equ CODE_start_

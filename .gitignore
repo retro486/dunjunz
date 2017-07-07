@@ -36,7 +36,6 @@ select-screen.bin
 thanks.bin
 tiles.s
 version.bin
-version.txt
 video-select.bin
 
 loading-screen.s
@@ -51,6 +50,15 @@ dunjunz-nl.cas
 dunjunz-nl.wav
 dunjunz.bin
 dunjunz.cas
-dunjunz.dsk
+dunjunz.raw
+dunjunz.raw.dz
 dunjunz.shtml
+dunjunz.sym
 dunjunz.wav
+
+## wrapped output
+dunjunz-coco.bin
+dunjunz-dragon.bin
+dunjunz-wrap.lis
+dunjunz.dsk
+dunjunz.vdk

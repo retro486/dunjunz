@@ -38,12 +38,6 @@ CLEAN += ./tile2s
 
 ####
 
-.PHONY: version.txt
-version.txt:
-	echo "  DUNJUNZ - BETA3.2" > $@
-
-CLEAN += version.txt
-
 tiles.s: ./tilesheet.sh tiles.png ./tile2s Makefile
 	./tilesheet.sh tiles.png > $@
 
@@ -111,12 +105,24 @@ notefreq.s: ./gen_notefreq.pl Makefile
 
 CLEAN += notefreq.s
 
+dunjunz.raw: dunjunz.s notefreq.s tiles.s fonts.s $(TEXT_INCLUDES) ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(LEVELS_BIN_DZ)
+	$(ASM6809) -B -l dunjunz.lis -s dunjunz.sym -o $@ $<
+CLEAN += dunjunz.lis dunjunz.sym dunjunz.raw
+
 dunjunz.bin: dunjunz.s notefreq.s tiles.s fonts.s $(TEXT_INCLUDES) ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(LEVELS_BIN_DZ)
-	$(ASM6809) -C -e start -l $(<:.s=.lis) -o $@ $<
-CLEAN += dunjunz.lis dunjunz.bin
+	$(ASM6809) -C -e INIT_exec -o $@ $<
+CLEAN += dunjunz.bin
+
+dunjunz-coco.bin: dunjunz-wrap.s dunjunz.raw dunjunz.raw.dz
+	$(ASM6809) -C -e wrap_exec -o $@ $<
+CLEAN += dunjunz-coco.bin
+
+dunjunz-dragon.bin: dunjunz-wrap.s dunjunz.raw dunjunz.raw.dz
+	$(ASM6809) -D -e wrap_exec -l dunjunz-wrap.lis -o $@ $<
+CLEAN += dunjunz-dragon.bin
 
 loading-screen.s: loading-screen.png ./tile2s
-	./tile2s -br -o $@ $<
+	./tile2s -b -o $@ $<
 
 loading-screen.bin: loading-screen.s
 	$(ASM6809) -B -o $@ $<
@@ -133,23 +139,14 @@ dunjunz-nl.cas dunjunz-nl.wav: dunjunz.bin
 	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ --eof-data --dzip --fast \
 		-C dunjunz.bin
 
-dunjunz.dsk: dunjunz.bin
+#dunjunz.vdk: dunjunz-dragon.bin
+
+dunjunz.dsk: dunjunz-coco.bin
 	rm -f $@
 	decb dskini $@
-	decb copy -2b dunjunz.bin $@,DUNJUNZ.BIN
+	decb copy -2b dunjunz-coco.bin $@,DUNJUNZ.BIN
 
 CLEAN += dunjunz.cas dunjunz.wav dunjunz-nl.cas dunjunz-nl.wav dunjunz.dsk
-
-####
-
-dunjunz.body.html: dunjunz.md
-	pandoc -t html5 -o $@ $<
-
-dunjunz.shtml: dunjunz.head.html dunjunz.body.html dunjunz.foot.html
-	sed "s/%UPDATED%/`date '+%e %b %Y'`/" < dunjunz.head.html > $@
-	cat dunjunz.body.html dunjunz.foot.html >> $@
-
-CLEAN += dunjunz.body.html dunjunz.shtml
 
 ####
 
