@@ -1,7 +1,7 @@
 # Dunjunz
 
 .PHONY: all
-all: dunjunz.bin dunjunz.cas dunjunz.wav dunjunz.dsk
+all: dunjunz.cas dunjunz.wav
 
 ####
 
@@ -105,39 +105,94 @@ notefreq.s: ./gen_notefreq.pl Makefile
 
 CLEAN += notefreq.s
 
-dunjunz.raw: dunjunz.s notefreq.s tiles.s fonts.s $(TEXT_INCLUDES) ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(LEVELS_BIN_DZ)
+dunj64.bin: dunj64.s song.s press-key.bin.dz
+	$(ASM6809) -B -l dunj64.lis -s dunj64.sym -o $@ $<
+CLEAN += dunj64.lis dunj64.sym dunj64.bin dunj64.bin.dz
+
+dunjunz.bin: dunjunz.s dunj64.bin notefreq.s tiles.s fonts.s $(TEXT_INCLUDES) ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(LEVELS_BIN_DZ)
 	$(ASM6809) -B -l dunjunz.lis -s dunjunz.sym -o $@ $<
-CLEAN += dunjunz.lis dunjunz.sym dunjunz.raw
+CLEAN += dunjunz.lis dunjunz.sym dunjunz.bin dunjunz.bin.dz
 
-dunjunz.bin: dunjunz.s notefreq.s tiles.s fonts.s $(TEXT_INCLUDES) ntsc-check.bin.dz play-screen.bin.dz play-screen-ntsc.bin.dz $(LEVELS_BIN_DZ)
-	$(ASM6809) -C -e INIT_exec -o $@ $<
-CLEAN += dunjunz.bin
-
-dunjunz-coco.bin: dunjunz-wrap.s dunjunz.raw dunjunz.raw.dz
-	$(ASM6809) -C -e wrap_exec -o $@ $<
+# XXX won't really work now - tackle 64K
+dunjunz-coco.bin: dunjunz-wrap.s dunjunz.bin.dz
+	$(ASM6809) -C -e wrap_exec -l dunjunz-coco.lis -o $@ $<
 CLEAN += dunjunz-coco.bin
 
-dunjunz-dragon.bin: dunjunz-wrap.s dunjunz.raw dunjunz.raw.dz
-	$(ASM6809) -D -e wrap_exec -l dunjunz-wrap.lis -o $@ $<
+# XXX won't really work now - tackle 64K
+dunjunz-dragon.bin: dunjunz-wrap.s dunjunz.bin.dz
+	$(ASM6809) -D -e wrap_exec -l dunjunz-dragon.lis -o $@ $<
 CLEAN += dunjunz-dragon.bin
 
-loading-screen.s: loading-screen.png ./tile2s
+title.s: title.png ./tile2s
 	./tile2s -b -o $@ $<
 
-loading-screen.bin: loading-screen.s
+title.bin: title.s
 	$(ASM6809) -B -o $@ $<
 
-CLEAN += loading-screen.s loading-screen.bin
+CLEAN += title.s title.bin title.bin.dz
 
-dunjunz.cas dunjunz.wav: loading-screen.bin dunjunz.bin
-	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ --eof-data --dzip --fast \
-		-B -l 0x0400 loading-screen.bin \
-		--vdg 0xe0 --sam-v 6 --sam-f 2 \
-		-C dunjunz.bin
+copyright.s: copyright.png ./tile2s
+	./tile2s -b -o $@ $<
 
-dunjunz-nl.cas dunjunz-nl.wav: dunjunz.bin
-	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ --eof-data --dzip --fast \
-		-C dunjunz.bin
+copyright.bin: copyright.s
+	$(ASM6809) -B -o $@ $<
+
+CLEAN += copyright.s copyright.bin copyright.bin.dz
+
+press-key.s: press-key.png ./tile2s
+	./tile2s -b -o $@ $<
+
+press-key.bin: press-key.s
+	$(ASM6809) -B -o $@ $<
+
+CLEAN += press-key.s press-key.bin press-key.bin.dz
+
+TAPE_PARTS = tape-part1 \
+	tape-part2 \
+	tape-part3 \
+	tape-part4 \
+	tape-part5
+
+TAPE_PARTS_CAS = $(TAPE_PARTS:%=%.cas)
+TAPE_PARTS_WAV = $(TAPE_PARTS:%=%.wav)
+
+CLEAN += $(TAPE_PARTS_CAS) $(TAPE_PARTS_WAV)
+
+tape-part1.bin: tape-part1.s dunjunz.bin.dz
+	$(ASM6809) -C -e start -l tape-part1.lis -o $@ $<
+
+CLEAN += tape-part1.bin tape-part1.lis
+
+tape-part1.cas tape-part1.wav: tape-part1.bin
+	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ \
+		--eof-data --dzip --fast \
+		-C $<
+
+tape-part2.cas tape-part2.wav: title.bin.dz
+	$(BIN2CAS) $(B2CFLAGS) -o $@ \
+		--fast --eof-data --no-filename \
+		-B $<
+
+tape-part3.cas tape-part3.wav: copyright.bin.dz
+	$(BIN2CAS) $(B2CFLAGS) -o $@ \
+		--fast --eof-data --no-filename \
+		-B $<
+
+tape-part4.cas tape-part4.wav: dunjunz.bin.dz
+	$(BIN2CAS) $(B2CFLAGS) -o $@ \
+		--fast --eof-data --no-filename \
+		-B $<
+
+tape-part5.cas tape-part5.wav: dunj64.bin.dz
+	$(BIN2CAS) $(B2CFLAGS) -o $@ \
+		--fast --eof-data --no-filename \
+		-B $<
+
+dunjunz.cas: $(TAPE_PARTS_CAS)
+	cat $(TAPE_PARTS_CAS) > $@
+
+dunjunz.wav: $(TAPE_PARTS_WAV)
+	sox $(TAPE_PARTS_WAV) $@
 
 #dunjunz.vdk: dunjunz-dragon.bin
 

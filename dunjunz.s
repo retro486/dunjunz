@@ -42,6 +42,7 @@ DEBUG_LEVEL25	equ 0
 		include	"dragonhw.s"
 		include "objects.s"
 		include "notefreq.s"
+		include "dunj64.sym"
 
 fb0		equ $0200	; framebuffer base
 fb_w		equ 32		; framebuffer line width
@@ -292,7 +293,6 @@ psg_c1pri	rmb 1
 psg_c2pri	rmb 1
 
 difficulty	rmb 1
-sound		rmb 1
 joystk_mode	rmb 1
 level		rmb 1
 
@@ -484,9 +484,7 @@ psg_c1val	equ *+1
 ; 	a = priority
 ; 	x -> sound data
 
-psg_submit	ldb sound
-		bne 90F
-
+psg_submit	
 		ldb psg_c1pri
 		cmpb psg_c2pri
 		bhi psg_submit_c2
@@ -811,14 +809,17 @@ mainloop
 		jsr process_shots
 		jsr psg_play2frags
 
-		ldb #$7f40
-		sta reg_pia0_pdrb
-		bitb reg_pia0_pdra	; SHIFT?
-		bne 60F
-		lda #$fb
+		ldd #$fb40
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra	; BREAK?
+		bne 60F
+
+		lda #$7f
+		sta reg_pia0_pdrb
+		bitb reg_pia0_pdra	; SHIFT?
 		beq 99F
+		bra pause
+
 60
 
 		lda finished
@@ -846,6 +847,12 @@ game_over_screen
 		leax -1,x
 		bne 10B
 99		jmp game_reset
+
+pause		brn pause64k
+		jsr wait_keypress
+		bra 60B
+pause64k	jsr play_song
+		bra 60B
 
 		DATA
 death_screen	fcb 12
@@ -1278,6 +1285,9 @@ PATCH_p1ddrb	equ *+1
 		sta reg_sam_v1s
 		sta reg_sam_v2s
 
+		; Always sit in map type 1
+		sta reg_sam_tys
+
 		lda #gamedp
 		tfr a,dp
 		setdp gamedp
@@ -1291,11 +1301,32 @@ PATCH_p1ddrb	equ *+1
 		lbeq cheat
 10
 
-		ldy #select_screen
+mod_show_title
+		bra 20F
+		lda #$e0
+		sta reg_pia1_ddrb
+		ldx #fb0
+10		ldd #$aaaa
+		std ,x++
+		cmpx #fb0_end
+		blo 10B
+		ldx #fb0+10*fb_w+151*fb_w
+		stx dzip_end
+		ldu #fb0+10*fb_w
+		ldx #$8500
+		jsr dunzip
+		ldx #fb0+171*fb_w+9*fb_w
+		stx dzip_end
+		ldu #fb0+171*fb_w
+		ldx #press_key_dz
+		jsr dunzip
+		jsr reset_song
+		jsr play_song
+
+20		ldy #select_screen
 		jsr write_screen
 
 mod_skip_init	brn skip_init
-		clr sound
 		clr difficulty
 		clr joystk_mode
 		lda #$0f
@@ -1327,12 +1358,6 @@ update_select_screen
 		ldy #text_easy
 40		jsr write_continue
 
-		ldy #text_on
-		tst sound
-		beq 10F
-		ldy #text_off
-10		jsr write_continue
-
 		ldy #text_1
 		tst joystk_mode
 		beq 10F
@@ -1351,8 +1376,6 @@ toggle_p3	lda #$04
 toggle_p4	lda #$08
 10		eora playing
 		sta playing
-		bra update_select_screen
-toggle_sound	com sound
 		bra update_select_screen
 toggle_skill	com difficulty
 		bra update_select_screen
@@ -1373,8 +1396,6 @@ text_yes	fcb $8e,$22,$0e,$1c,$ff,0
 text_no		fcb $8e,$17,$18,$27,$ff,0
 text_hard	fcb $ff,$8e,$11,$0a,$1b,$0d,0
 text_easy	fcb $ff,$8e,$0e,$0a,$1c,$22,0
-text_on		fcb $ff,$8e,$18,$17,$27,0
-text_off	fcb $ff,$8e,$18,$0f,$0f,0
 text_1		fcb $ff,$ff,$8e,$01,0
 text_2		fcb $ff,$ff,$8e,$02,0
 version		includebin "version.bin"
@@ -1387,9 +1408,9 @@ tbl_kdsp_menu	KEYDSP_ENTRY 7,5,start_game	; SPACE
 		KEYDSP_ENTRY 3,0,toggle_p3	; '3'
 		KEYDSP_ENTRY 4,0,toggle_p4	; '4'
 		KEYDSP_ENTRY 4,2,toggle_skill	; 'D'
-		KEYDSP_ENTRY 3,4,toggle_sound	; 'S'
 		KEYDSP_ENTRY 2,3,toggle_joystk	; 'J'
 		KEYDSP_ENTRY 6,6,show_version	; N/C
+		KEYDSP_ENTRY 2,6,game_reset	; BREAK
 		fdb 0
 		CODE
 
@@ -1397,7 +1418,7 @@ start_game
 
 		; must select some players
 		lda playing
-		lbeq update_select_screen
+		beq update_select_screen
 
 		lda difficulty
 		bne 5F
@@ -3574,6 +3595,26 @@ dunz_run	stb ,u+
 		blo dunz_loop
 		rts
 
+; Wait for any key
+
+wait_keypress
+		; wait if key held
+10		bsr firebutton_pressed
+		bne 10B
+		clr reg_pia0_pdrb
+		lda reg_pia0_pdra
+		ora #$80
+		inca
+		bne 10B
+		; wait until key pressed
+10		lda reg_pia0_pdra
+		ora #$80
+		inca
+		beq 10B
+		bsr firebutton_pressed
+		bne 10B
+		rts
+
 ; For menus: scan table of KEYDSP_ENTRY and jump to handler
 
 wait_keypress_jump
@@ -3931,39 +3972,6 @@ all_objects_end
 INIT_exec
 		setdp 0			; assumed
 
-	if 0
-		orcc #$50
-
-		ldu #$8000
-		sta reg_sam_tys
-		clr ,u
-		lda ,u
-		bne no64k
-		dec ,u
-		lda ,u
-		coma
-		bne no64k
-
-		; 64K loader
-
-		; copy everything from page 0 to page 1 - overkill, but we
-		; need the DP vars to continue tape loading and this code,
-		; obviously.
-
-		ldx #$0000
-10		ldd ,x++
-		std ,u++
-		cmpu #$ff00
-		blo 10B
-
-		; switch to page 1 and load zipped segment from $0200
-		; onwards
-		sta reg_sam_p1s
-
-no64k
-		sta reg_sam_tyc
-	endif
-
 		orcc #$50
 
 		ldu #textfont_a
@@ -4061,6 +4069,23 @@ init_reset
 		ldu #coco_patches	; Apply CoCo patches
 		jsr apply_patches
 10
+
+		ldd $3ffe
+		pshs d
+		sta reg_sam_tys
+		coma
+		comb
+		std $bffe
+		cmpd $3ffe
+		beq no_64k
+		cmpd $bffe
+		bne no_64k
+		ldu #m64k_patches
+		jsr apply_patches
+		bra 10F
+no_64k		sta reg_sam_tyc
+10		puls d
+		std $3ffe
 
 		ldy #video_select
 		jsr write_screen
@@ -4228,6 +4253,22 @@ palette_swap_u	pshs b
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
+; 64K patches
+
+m64k_patches
+
+		PATCH mod_show_title
+		fcb $21			; brn
+		ENDPATCH
+
+		PATCH pause
+		fcb $20			; bra
+		ENDPATCH
+
+		fcb 0			; no more patches
+
+		; - - - - - - - - - - - - - - - - - - - - - - -
+
 ; CoCo patches
 
 coco_patches
@@ -4239,7 +4280,6 @@ coco_patches
 		KEYDSP_ENTRY 3,4,toggle_p3	; '3'
 		KEYDSP_ENTRY 4,4,toggle_p4	; '4'
 		KEYDSP_ENTRY 4,0,toggle_skill	; 'D'
-		KEYDSP_ENTRY 3,2,toggle_sound	; 'S'
 		KEYDSP_ENTRY 2,1,toggle_joystk	; 'J'
 		ENDPATCH
 

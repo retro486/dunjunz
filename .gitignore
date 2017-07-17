@@ -19,6 +19,10 @@ level25d.bin.dz
 level25d.lis
 level25d.s
 
+## bits
+copyright.bin
+copyright.bin.dz
+copyright.s
 death-screen.bin
 end-screen.bin
 fonts.s
@@ -32,33 +36,43 @@ play-screen-ntsc.s
 play-screen.bin
 play-screen.bin.dz
 play-screen.s
+press-key.bin
+press-key.bin.dz
+press-key.s
 select-screen.bin
 thanks.bin
 tiles.s
+title.bin
+title.bin.dz
+title.s
 version.bin
 video-select.bin
 
-loading-screen.s
-loading-screen.bin
+## 64K part
+dunj64.bin
+dunj64.bin.dz
+dunj64.lis
+dunj64.sym
 
-dunjunz.body.html
-
+## game output
 dunjunz.lis
-
-## final output
-dunjunz-nl.cas
-dunjunz-nl.wav
 dunjunz.bin
-dunjunz.cas
-dunjunz.raw
-dunjunz.raw.dz
+dunjunz.bin.dz
 dunjunz.shtml
 dunjunz.sym
+
+## tape output
+tape-part1.bin
+tape-part1.lis
+tape-part[12345].cas
+tape-part[12345].wav
+dunjunz.cas
 dunjunz.wav
 
-## wrapped output
+## disk output
 dunjunz-coco.bin
+dunjunz-coco.lis
 dunjunz-dragon.bin
-dunjunz-wrap.lis
+dunjunz-dragon.lis
 dunjunz.dsk
 dunjunz.vdk
