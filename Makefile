@@ -185,7 +185,7 @@ tape-part4.cas tape-part4.wav: dunjunz.bin.dz
 
 tape-part5.cas tape-part5.wav: dunj64.bin.dz
 	$(BIN2CAS) $(B2CFLAGS) -o $@ \
-		--fast --eof-data --no-filename \
+		--fast --eof-data --no-filename --pause \
 		-B $<
 
 dunjunz.cas: $(TAPE_PARTS_CAS)

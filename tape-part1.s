@@ -20,6 +20,12 @@ start
 		orcc #$50
 		lds #$0300
 
+		; use different pages for $c000-$fdff on coco3
+		lda #$36
+		sta $ffa6
+		inca
+		sta $ffa7
+
 		; load title dz
 		ldx #$1c00
 		jsr [load_part_ptr]
@@ -92,15 +98,25 @@ dunzip_title
 
 		; load music dz in page#1
 		sta reg_sam_p1s
-		ldx #$4000
+		lda #$36
+		sta $ffa2
+		inca
+		sta $ffa3
+		ldx #$4000		; $c000, mapped lower
 		jsr [load_part_ptr]
+		sta reg_sam_p1c
+		lda #$3a
+		sta $ffa2
+		inca
+		sta $ffa3
+		sta reg_sam_tys
 		; dunzip music dz to $9500+
 		tfr x,d
-		ldx #$4000
-		ldu #$1500
+		ora #$80
+		ldx #$c000
+		ldu #$9500
 		jsr [dunzip_ptr]
-
-		sta reg_sam_p1c
+		sta reg_sam_tyc
 
 		; dunzip game
 20		puls d

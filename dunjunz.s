@@ -814,9 +814,9 @@ mainloop
 		bitb reg_pia0_pdra	; BREAK?
 		bne 60F
 
-		lda #$7f
+		lda #$fe
 		sta reg_pia0_pdrb
-		bitb reg_pia0_pdra	; SHIFT?
+		bitb reg_pia0_pdra	; ENTER?
 		beq 99F
 		bra pause
 
