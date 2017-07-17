@@ -10,11 +10,11 @@ my $mfreq = 440;
 
 Getopt::Long::Configure("bundling", "auto_help");
 
-GetOptions("cycles|c=i" => \$mixer_cyc,
+GetOptions("cycles|c=f" => \$mixer_cyc,
 		"base|b=i", \$mbase,
 		"base-freq|f=i", \$mfreq);
 
-my @note_names = ( "c", "cs", "d", "ds", "e", "f", "fs", "g", "gs", "a", "as", "b" );
+my @note_names = ( "C", "CS", "D", "DS", "E", "F", "FS", "G", "GS", "A", "AS", "B" );
 my @note_map = ( );
 
 for my $m (0..255) {

@@ -375,31 +375,49 @@ psg_playfrag
 		tfr a,dp
 		setdp *>>8
 
+		ldy #psg_saw_att
+
 		; channel 1 "envelope"
 psg_c1env	equ *+1
-		ldu #psg_c1freq		; convenient initial zero
-		pulu d,x
-		std psg_c1freq
-		beq 10F
-		stx psg_c1envops
-		stu psg_c1env
-		bra 20F
-10		sta psg_c1pri
-		std psg_c1off
-20
+		ldu #psg_f1		; convenient initial zero
+		lda ,u+			; attenuation
+		bne 10F			; end of list
+		; end of list
+		sta psg_c1pri
+		sta psg_a1_sqr	; even for sawtooth
+		bra 90F
+10		pulu x			; frequency
+		stx psg_f1
+		tsta
+		bpl 20F
+		; -ve attenuation: fetch from sawtooth attenuation table
+		ldd a,y
+		std psg_a1_saw
+		bra 30F
+20		sta psg_a1_sqr
+30		stu psg_c1env
+90
 
 		; channel 2 "envelope"
 psg_c2env	equ *+1
-		ldu #psg_c2freq		; convenient initial zero
-		pulu d,x
-		std psg_c2freq
-		beq 10F
-		stx psg_c2envops
-		stu psg_c2env
-		bra 20F
-10		sta psg_c2pri
-		std psg_c2off
-20
+		ldu #psg_f2		; convenient initial zero
+		lda ,u+			; attenuation
+		bne 10F			; end of list
+		; end of list
+		sta psg_c2pri
+		sta psg_a2_sqr	; even for sawtooth
+		bra 90F
+10		pulu x			; frequency
+		stx psg_f2
+		tsta
+		bpl 20F
+		; -ve attenuation: fetch from sawtooth attenuation table
+		ldd a,y
+		std psg_a2_saw
+		bra 30F
+20		sta psg_a2_sqr
+30		stu psg_c2env
+90
 
 		lda psg_c1pri
 		ora psg_c2pri
@@ -408,46 +426,43 @@ psg_c2env	equ *+1
 		stb reg_pia1_crb	; enable sound mux
 10
 
-		ldx #100		; fragment length
+		ldx #101		; fragment length
 		ldu #reg_pia1_pdra	; DAC
 
 		; - - - - - - - - - - - - - - - - - - - - - - -
 
 psg_core_loop
 
-psg_c1off	equ *+1
+psg_o1		equ *+1
                 ldd #$0000		; 3
-psg_c1freq	equ *+1
+psg_f1		equ *+1
                 addd #$0000		; 4
-		std psg_c1off		; 5
-psg_c1wave	equ *+1
-		anda #$ff		; 2
-		lsra			; 2
-
-psg_c1envops	nop			; 2
-		nop			; 2
+		std psg_o1		; 5
+psg_mod1	lsla			; 2 - set to lsra for sawtooth
+psg_a1_saw	rorb			; 2 - or sawtooth shift/nop
+		sex			; 2 - or sawtooth shift/nop
+psg_a1_sqr	equ *+1
+		anda #$00		; 2 - always $ff for sawtooth
 		sta psg_c1val		; 4
 
-psg_c2off	equ *+1
+psg_o2		equ *+1
                 ldd #$0000		; 3
-psg_c2freq	equ *+1
+psg_f2		equ *+1
                 addd #$0000		; 4
-		std psg_c2off		; 5
-psg_c2wave	equ *+1
-		anda #$ff		; 2
-		lsra			; 2
-
-psg_c2envops	nop			; 2
-		nop			; 2
+		std psg_o2		; 5
+psg_mod2	lsla			; 2 - set to lsra for sawtooth
+psg_a2_saw	rorb			; 2 - or sawtooth shift/nop
+		sex			; 2 - or sawtooth shift/nop
+psg_a2_sqr	equ *+1
+		anda #$00		; 2 - always $ff for sawtooth
 
 psg_c1val	equ *+1
 		adda #$00		; 2
 
-		anda #$fc		; 2
 		sta ,u			; 4
-		leax -1,x		; 4
+		leax -1,x		; 5
 		bne psg_core_loop	; 3
-					; total 59 cycles
+					; total 58 cycles
 
 		; - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -463,192 +478,266 @@ psg_c1val	equ *+1
 ; Set up a sequence to be played.  Find lower priority channel and
 ; populate its data.
 
-; Sound data starts with a waveform (either psg_wave_sqr or psg_wave_saw), and
-; continues with a list of (frequency,envelope).  A zero frequency ends
-; the list.
+; Sound data is a list of (attenuation,frequency).  Zero ends the list.
 
 ; Entry:
 ; 	a = priority
 ; 	x -> sound data
 
-psg_play_snd	ldb sound
-		beq 10F
+psg_submit	ldb sound
+		bne 90F
 
 		ldb psg_c1pri
 		cmpb psg_c2pri
-		bhi psg_play_snd_c2
+		bhi psg_submit_c2
 
-psg_play_snd_c1	cmpa psg_c1pri
-		bls 10F
+psg_submit_c1	cmpa psg_c1pri
+		bls 90F
 		sta psg_c1pri
-		lda ,x+
-		sta psg_c1wave
 		stx psg_c1env
 		ldd #$0000
-		std psg_c1off
-10		rts
+		std psg_o1
+		lda ,x		; test first attenuation value
+		bmi 10F		; negative = sawtooth
+		; square wave
+		lda #$48	; lsla
+		sta psg_mod1
+		ldd #$561d	; rorb,sex
+		std psg_a1_saw
+90		rts
+		; sawtooth wave
+10		ldd #$44ff	; lsra, (anda) #$ff
+		sta psg_mod1
+		stb psg_a1_sqr
+		rts
 
-psg_play_snd_c2	cmpa psg_c2pri
-		bls 10F
+psg_submit_c2	cmpa psg_c2pri
+		bls 90F
 		sta psg_c2pri
-		lda ,x+
-		sta psg_c2wave
 		stx psg_c2env
 		ldd #$0000
-		std psg_c2off
-10		rts
+		std psg_o2
+		lda ,x		; test first attenuation value
+		bmi 10F		; negative = sawtooth
+		; square wave
+		lda #$48	; lsla
+		sta psg_mod2
+		ldd #$561d	; rorb,sex
+		std psg_a2_saw
+90		rts
+		; sawtooth wave
+10		ldd #$44ff	; lsra, (anda) #$ff
+		sta psg_mod2
+		stb psg_a2_sqr
+		rts
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 ; Sound data
 
-psg_wave_sqr	equ $80		; (anda) #$80
-psg_wave_saw	equ $ff		; (anda) #$ff
-
-psg_env3	equ $1212	; nop,nop
-psg_env2	equ $1244	; nop,lsra
-psg_env1	equ $4444	; lsra,lsra
-psg_env0	equ $124f	; nop,clra
+psg_asqr_0	equ 127
+psg_asqr_2	equ 101
+psg_asqr_4	equ 80
+psg_asqr_6	equ 64
+psg_asqr_8	equ 51
+psg_asqr_10	equ 40
+psg_asqr_12	equ 32
+psg_asqr_14	equ 25
+psg_asqr_16	equ 20
+psg_asqr_18	equ 16
+psg_asqr_20	equ 13
+psg_asqr_22	equ 10
+psg_asqr_24	equ 8
+psg_asqr_26	equ 6
+psg_asqr_28	equ 5
+psg_asqr_off	equ 0
 
 		DATA
-snd_key		fcb psg_wave_sqr
-		fdb g6,psg_env3,g6,psg_env2
-		fdb 0
+		fcb $4f		; clra
+		fcb $44		; lsra
+		fcb $44		; lsra
+		fcb $12		; nop
+		fcb $12		; nop
+psg_saw_att
+		CODE
 
-snd_hit		fcb psg_wave_sqr
-		fdb c4,psg_env3,a3,psg_env3
-		fdb 0
+; These index into psg_saw_att
+psg_asaw_0	equ -2		; nop,nop
+psg_asaw_6	equ -3		; lsra,nop
+psg_asaw_12	equ -4		; lsra,lsra
+psg_asaw_off	equ -5		; clra,lsra
 
-snd_bump	fcb psg_wave_sqr
-		fdb f3,psg_env3
-		fdb 0
+; Single note
+NOTE		macro		; note,volume
+		fcb \2
+		fdb \1
+		endm
 
-snd_monster_hit	fcb psg_wave_saw
-		fdb e4,psg_env1,c4,psg_env3
-		fdb 0
+; Two notes at same volume
+NOTE2		macro		; note,note,volume
+		fcb \3
+		fdb \1
+		fcb \3
+		fdb \2
+		endm
 
-snd_monster_die	fcb psg_wave_saw
-		fdb c4,psg_env3,c4,psg_env2
-		fdb e4,psg_env3,e4,psg_env2
-		fdb c4,psg_env3,c4,psg_env2
-		fdb e4,psg_env2,e4,psg_env1
-		fdb e4,psg_env2,e4,psg_env1
-		fdb 0
+; Double length note
+DNOTE		macro		; note,volume
+		fcb \2
+		fdb \1
+		fcb \2
+		fdb \1
+		endm
 
-snd_drainer	fcb psg_wave_saw
-		fdb g2,psg_env2,g1,psg_env2
-		fdb g2,psg_env2,g1,psg_env2
-		fdb g2,psg_env2,g1,psg_env2
-		fdb g2,psg_env2,g1,psg_env2
-		fdb 0
+; Double length note, volume changes
+ENOTE		macro		; note,volume,volume
+		fcb \2
+		fdb \1
+		fcb \3
+		fdb \1
+		endm
 
-snd_low		fcb psg_wave_saw
-		fdb c4,psg_env1,c4,psg_env2
-		fdb c4+20,psg_env2,c4+20,psg_env2
-		fdb c4,psg_env3,c4,psg_env3
-		fdb c4+20,psg_env3,c4+20,psg_env3
-		fdb 0
+		DATA
+snd_key
+		ENOTE G6,psg_asqr_0,psg_asqr_4
+		fcb 0
 
-snd_money	fcb psg_wave_sqr
-		fdb c7,psg_env2,c7,psg_env3
-		fdb c7-20,psg_env3,c7-20,psg_env3
-		fdb c7,psg_env3,c7,psg_env2
-		fdb c7-20,psg_env1,c7-20,psg_env1
-		fdb 0
+snd_hit
+		NOTE C4,psg_asqr_0
+		NOTE A3,psg_asqr_0
+		fcb 0
 
-snd_fire	fcb psg_wave_saw
-		fdb c5,psg_env1,c5,psg_env2
-		fdb 0
+snd_bump
+		NOTE F3,psg_asqr_0
+		fcb 0
 
-snd_door	fcb psg_wave_saw
-		fdb f5,psg_env3,f5,psg_env3
-		fdb f4,psg_env2,f4,psg_env2
-		fdb f4,psg_env2,f4,psg_env1
-		fdb 0
+snd_monster_hit
+		NOTE E4,psg_asaw_12
+		NOTE C4,psg_asaw_0
+		fcb 0
 
-snd_food	fcb psg_wave_saw
-		fdb g5,psg_env3,g5,psg_env2
-		fdb g5+20,psg_env3,g5+20,psg_env2
-		fdb g4,psg_env3,g4,psg_env2
-		fdb g4+20,psg_env3,g4+20,psg_env2
-		fdb 0
+snd_monster_die
+		ENOTE C4,psg_asaw_0,psg_asaw_6
+		ENOTE E4,psg_asaw_0,psg_asaw_6
+		ENOTE C4,psg_asaw_0,psg_asaw_6
+		ENOTE E4,psg_asaw_6,psg_asaw_12
+		ENOTE E4,psg_asaw_6,psg_asaw_12
+		fcb 0
 
-snd_magic	fcb psg_wave_saw
-		fdb c4,psg_env3,c4,psg_env1
-		fdb e4,psg_env3,e4,psg_env1
-		fdb c5,psg_env3,c5,psg_env1
-		fdb c5,psg_env3,c5,psg_env1
-		fdb c4,psg_env3,c4,psg_env1
-		fdb e4,psg_env3,e4,psg_env1
-		fdb c5,psg_env2,c5,psg_env1
-		fdb c5,psg_env2,c5,psg_env1
-		fdb c4,psg_env2,c4,psg_env1
-		fdb e4,psg_env2,e4,psg_env1
-		fdb c5,psg_env2,c5,psg_env1
-		fdb c5,psg_env2,c5,psg_env1
-		fdb c4,psg_env1,c4,psg_env1
-		fdb e4,psg_env1,e4,psg_env1
-		fdb c5,psg_env1,c5,psg_env1
-		fdb c5,psg_env1,c5,psg_env1
-		fdb 0
+snd_drainer
+		NOTE2 G2,G1,psg_asqr_4
+		NOTE2 G2,G1,psg_asqr_4
+		NOTE2 G2,G1,psg_asqr_4
+		NOTE2 G2,G1,psg_asqr_4
+		fcb 0
 
-snd_exit	fcb psg_wave_saw
-		fdb c7,psg_env3,c7,psg_env3
-		fdb (c7+b6)/2,psg_env3,(c7+b6)/2,psg_env3
-		fdb b6,psg_env3,b6,psg_env3
-		fdb (b6+as6)/2,psg_env3,(b6+as6)/2,psg_env3
-		fdb as6,psg_env3,as6,psg_env3
-		fdb (as6+a6)/2,psg_env3,(as6+a6)/2,psg_env3
-		fdb a6,psg_env3,a6,psg_env3
-		fdb (a6+gs6)/2,psg_env3,(a6+gs6)/2,psg_env3
-		fdb gs6,psg_env3,gs6,psg_env3
-		fdb (gs6+g6)/2,psg_env3,(gs6+g6)/2,psg_env3
-		fdb g6,psg_env3,g6,psg_env3
-		fdb (g6+fs6)/2,psg_env3,(g6+fs6)/2,psg_env3
-		fdb fs6,psg_env3,fs6,psg_env3
-		fdb (fs6+f6)/2,psg_env3,(fs6+f6)/2,psg_env3
-		fdb f6,psg_env3,f6,psg_env3
-		fdb (f6+e6)/2,psg_env3,(f6+e6)/2,psg_env3
-		fdb e6,psg_env3,e6,psg_env3
-		fdb (e6+ds6)/2,psg_env3,(e6+ds6)/2,psg_env3
-		fdb ds6,psg_env3,ds6,psg_env3
-		fdb (ds6+d6)/2,psg_env3,(ds6+d6)/2,psg_env3
-		fdb d6,psg_env2,d6,psg_env2
-		fdb (d6+cs6)/2,psg_env2,(d6+cs6)/2,psg_env2
-		fdb cs6,psg_env1,cs6,psg_env1
-		fdb (cs6+c6)/2,psg_env1,(cs6+c6)/2,psg_env1
-		fdb 0
+snd_low
+		ENOTE C4,psg_asaw_12,psg_asaw_6
+		ENOTE C4+20,psg_asaw_6,psg_asaw_6
+		ENOTE C4,psg_asaw_0,psg_asaw_0
+		ENOTE C4+20,psg_asaw_0,psg_asaw_0
+		fcb 0
 
-snd_tport	fcb psg_wave_saw
-		fdb cs5,psg_env1,ds5,psg_env1
-		fdb f5,psg_env1,g5,psg_env1
-		fdb a5,psg_env1,b5,psg_env1
-		fdb c6,psg_env1
-		fdb cs5,psg_env2
-		fdb ds5,psg_env2,f5,psg_env2
-		fdb g5,psg_env2,a5,psg_env2
-		fdb b5,psg_env2,c6,psg_env2
-		fdb cs5,psg_env3,ds5,psg_env3
-		fdb f5,psg_env3,g5,psg_env3
-		fdb a5,psg_env3,b5,psg_env3
-		fdb c6,psg_env3
-		fdb cs5,psg_env3,ds5,psg_env3
-		fdb f5,psg_env3,g5,psg_env3
-		fdb a5,psg_env3,b5,psg_env3
-		fdb c6,psg_env3
-		fdb cs5,psg_env3,ds5,psg_env3
-		fdb f5,psg_env3,g5,psg_env3
-		fdb a5,psg_env3,b5,psg_env3
-		fdb c6,psg_env3
-		fdb cs5,psg_env2,ds5,psg_env2
-		fdb f5,psg_env2,g5,psg_env2
-		fdb a5,psg_env2,b5,psg_env2
-		fdb c6,psg_env2
-		fdb cs5,psg_env1
-		fdb ds5,psg_env1,f5,psg_env1
-		fdb g5,psg_env1,a5,psg_env1
-		fdb b5,psg_env1,c6,psg_env1
-		fdb 0
+snd_money
+		ENOTE C7,psg_asqr_4,psg_asqr_0
+		ENOTE C7-20,psg_asqr_0,psg_asqr_0
+		ENOTE C7,psg_asqr_0,psg_asqr_4
+		ENOTE C7-20,psg_asqr_8,psg_asqr_8
+		fcb 0
+
+snd_fire
+		ENOTE C5,psg_asaw_12,psg_asaw_6
+		fcb 0
+
+snd_door
+		DNOTE F5,psg_asqr_0
+		DNOTE F4,psg_asqr_4
+		DNOTE F4,psg_asqr_8
+		fcb 0
+
+snd_food
+		ENOTE G5,psg_asaw_0,psg_asaw_6
+		ENOTE G5+20,psg_asaw_0,psg_asaw_6
+		ENOTE G4,psg_asaw_0,psg_asaw_6
+		ENOTE G4+20,psg_asaw_0,psg_asaw_6
+		fcb 0
+
+snd_magic
+		ENOTE C4,psg_asaw_0,psg_asaw_12
+		ENOTE E4,psg_asaw_0,psg_asaw_12
+		ENOTE C5,psg_asaw_0,psg_asaw_12
+		ENOTE C5,psg_asaw_0,psg_asaw_12
+		ENOTE C4,psg_asaw_0,psg_asaw_12
+		ENOTE E4,psg_asaw_0,psg_asaw_12
+		ENOTE C5,psg_asaw_6,psg_asaw_12
+		ENOTE C5,psg_asaw_6,psg_asaw_12
+		ENOTE C4,psg_asaw_6,psg_asaw_12
+		ENOTE E4,psg_asaw_6,psg_asaw_12
+		ENOTE C5,psg_asaw_6,psg_asaw_12
+		ENOTE C5,psg_asaw_6,psg_asaw_12
+		ENOTE C4,psg_asaw_12,psg_asaw_12
+		ENOTE E4,psg_asaw_12,psg_asaw_12
+		ENOTE C5,psg_asaw_12,psg_asaw_12
+		ENOTE C5,psg_asaw_12,psg_asaw_12
+		fcb 0
+
+snd_exit
+		DNOTE C7,psg_asaw_0
+		DNOTE (C7+B6)/2,psg_asaw_0
+		DNOTE B6,psg_asaw_0
+		DNOTE (B6+AS6)/2,psg_asaw_0
+		DNOTE AS6,psg_asaw_0
+		DNOTE (AS6+A6)/2,psg_asaw_0
+		DNOTE A6,psg_asaw_0
+		DNOTE (A6+GS6)/2,psg_asaw_0
+		DNOTE GS6,psg_asaw_0
+		DNOTE (GS6+G6)/2,psg_asaw_0
+		DNOTE G6,psg_asaw_0
+		DNOTE (G6+FS6)/2,psg_asaw_0
+		DNOTE FS6,psg_asaw_0
+		DNOTE (FS6+F6)/2,psg_asaw_0
+		DNOTE F6,psg_asaw_0
+		DNOTE (F6+E6)/2,psg_asaw_0
+		DNOTE E6,psg_asaw_0
+		DNOTE (E6+DS6)/2,psg_asaw_0
+		DNOTE DS6,psg_asaw_0
+		DNOTE (DS6+D6)/2,psg_asaw_0
+		DNOTE D6,psg_asaw_6
+		DNOTE (D6+CS6)/2,psg_asaw_6
+		DNOTE CS6,psg_asaw_12
+		DNOTE (CS6+C6)/2,psg_asaw_12
+		fcb 0
+
+snd_tport
+		NOTE2 CS5,DS5,psg_asaw_12
+		NOTE2 F5,G5,psg_asaw_12
+		NOTE2 A5,B5,psg_asaw_12
+		NOTE C6,psg_asaw_12
+		NOTE CS5,psg_asaw_6
+		NOTE2 DS5,F5,psg_asaw_6
+		NOTE2 G5,A5,psg_asaw_6
+		NOTE2 B5,C6,psg_asaw_6
+		NOTE2 CS5,DS5,psg_asaw_0
+		NOTE2 F5,G5,psg_asaw_0
+		NOTE2 A5,B5,psg_asaw_0
+		NOTE C6,psg_asaw_0
+		NOTE2 CS5,DS5,psg_asaw_0
+		NOTE2 F5,G5,psg_asaw_0
+		NOTE2 A5,B5,psg_asaw_0
+		NOTE C6,psg_asaw_0
+		NOTE2 CS5,DS5,psg_asaw_0
+		NOTE2 F5,G5,psg_asaw_0
+		NOTE2 A5,B5,psg_asaw_0
+		NOTE C6,psg_asaw_0
+		NOTE2 CS5,DS5,psg_asaw_6
+		NOTE2 F5,G5,psg_asaw_6
+		NOTE2 A5,B5,psg_asaw_6
+		NOTE C6,psg_asaw_6
+		NOTE CS5,psg_asaw_12
+		NOTE2 DS5,F5,psg_asaw_12
+		NOTE2 G5,A5,psg_asaw_12
+		NOTE2 B5,C6,psg_asaw_12
+		fcb 0
 
 		CODE
 
@@ -843,11 +932,11 @@ end_animation
 		sta 4,s
 		lda #$ff
 		ldx #snd_tport
-		jsr psg_play_snd
+		jsr psg_submit
 		bra 46F
 42		lda #$ff
 		ldx #snd_magic
-		jsr psg_play_snd
+		jsr psg_submit
 		lda #25
 44		sta 4,s
 46
@@ -1175,6 +1264,10 @@ PATCH_p1ddrb	equ *+1
 		inca
 		sta reg_pia0_crb	; FS enabled hi->lo
 
+		; SAM MPU rate = slow
+		sta reg_sam_r1c
+		sta reg_sam_r0c
+
 		; SAM display offset = $0200
 		sta reg_sam_f0s
 		sta reg_sam_f1c
@@ -1202,13 +1295,12 @@ PATCH_p1ddrb	equ *+1
 		jsr write_screen
 
 mod_skip_init	brn skip_init
+		clr sound
 		clr difficulty
 		clr joystk_mode
 		lda #$0f
 		sta playing
 		dec mod_skip_init	; change to bra
-set_sound_on	lda #$fc
-update_sound	sta sound
 
 skip_init
 
@@ -1235,10 +1327,10 @@ update_select_screen
 		ldy #text_easy
 40		jsr write_continue
 
-		ldy #text_off
+		ldy #text_on
 		tst sound
 		beq 10F
-		ldy #text_on
+		ldy #text_off
 10		jsr write_continue
 
 		ldy #text_1
@@ -1260,9 +1352,8 @@ toggle_p4	lda #$08
 10		eora playing
 		sta playing
 		bra update_select_screen
-toggle_sound	lda sound
-		eora #$fc
-		bra update_sound
+toggle_sound	com sound
+		bra update_select_screen
 toggle_skill	com difficulty
 		bra update_select_screen
 toggle_joystk	com joystk_mode
@@ -1716,10 +1807,10 @@ setup_players
 		ldx #death_fifo		; initialise death fifo
 		stx death_fifo_end
 
-		ldx #psg_c1freq
+		ldx #psg_f1
 		stx psg_c1env
 		std ,x
-		ldx #psg_c2freq
+		ldx #psg_f2
 		stx psg_c2env
 		std ,x
 		sta psg_c1pri
@@ -2274,7 +2365,7 @@ mon_check_direction
 		bne 50F
 		lda #1
 		ldx #snd_hit
-		jsr psg_play_snd
+		jsr psg_submit
 mod_mon_hit_player	equ *+1
 		lda #$90		; decrement hp by 10-armour
 		adda plr_armour,u
@@ -2720,7 +2811,7 @@ plr_fire
 
 		lda #2		; priority
 		ldx #snd_fire
-		jsr psg_play_snd
+		jsr psg_submit
 
 		jmp obj_draw	; draw player
 
@@ -2735,7 +2826,7 @@ plr_bump	lda spr_state,y
 		rts
 10		lda #1
 		ldx #snd_bump
-		jsr psg_play_snd
+		jsr psg_submit
 		lda #$99		; decrement hp by 1
 		jmp plr_damage
 
@@ -2779,7 +2870,7 @@ plr_magic
 		blo 25B
 		lda #$ff	; highest priority
 		ldx #snd_magic
-		jsr psg_play_snd
+		jsr psg_submit
 		; step monsters through death and play magic sound fx
 		bsr magic_mon_step
 		bsr magic_mon_step
@@ -2830,7 +2921,7 @@ plr_open_door
 		std plr_key_opens,u
 		lda #2		; priority
 		ldx #snd_door
-		jsr psg_play_snd
+		jsr psg_submit
 		lda #7
 		jsr plr_add_score
 		jsr plr_undraw_key
@@ -3135,7 +3226,7 @@ shot_hit_monster
 		bcc 10F
 		lda #3
 		ldx #snd_monster_die
-		jsr psg_play_snd
+		jsr psg_submit
 		ldd #$0100|state_mon_die	; 1pt for monster
 		stb spr_state,y
 		jsr plr_add_score
@@ -3144,7 +3235,7 @@ shot_hit_monster
 10		sta spr_hp,y
 		lda #1
 		ldx #snd_monster_hit
-		jsr psg_play_snd
+		jsr psg_submit
 		puls u
 		jmp shot_clear
 
@@ -3163,7 +3254,7 @@ shot_hit_monster
 pickup_drainer
 		lda #2		; priority
 		ldx #snd_drainer
-		jsr psg_play_snd
+		jsr psg_submit
 		bsr kill_speed
 mod_drainer_dmg	equ *+1
 		lda #$80	; -20HP
@@ -3183,7 +3274,7 @@ pickup_potion
 pickup_food
 		lda #2		; priority
 		ldx #snd_food
-		jsr psg_play_snd
+		jsr psg_submit
 		lda spr_hp,u
 		adda #$10
 		daa
@@ -3226,7 +3317,7 @@ pickup_weapon
 sound_low
 		lda #2		; priority
 		ldx #snd_low
-		jsr psg_play_snd
+		jsr psg_submit
 		; fall through to kill_speed
 
 kill_speed	clra
@@ -3238,7 +3329,7 @@ kill_speed	clra
 pickup_money
 		lda #2		; priority
 		ldx #snd_money
-		jsr psg_play_snd
+		jsr psg_submit
 		bra kill_speed
 
 pickup_cross
@@ -3278,7 +3369,7 @@ pickup_key
 		; to know how many times player has juggled keys
 		lda #4
 		ldx #snd_key
-		jsr psg_play_snd
+		jsr psg_submit
 
 		ldd plr_key_opens,u
 		ldx obj_key_opens,y
@@ -3312,7 +3403,7 @@ pickup_key
 pickup_tport
 		lda #4		; priority
 		ldx #snd_tport
-		jsr psg_play_snd
+		jsr psg_submit
 10		leay sizeof_obj,y
 		cmpy #items_end
 		blo 20F
@@ -3364,7 +3455,7 @@ pickup_exit
 		jsr kill_speed
 		lda #4		; priority
 		ldx #snd_exit
-		jsr psg_play_snd
+		jsr psg_submit
 		leas 3,s	; skip return address, stacked object type
 		puls x,y,pc
 20		rts
@@ -3901,9 +3992,20 @@ init_reset
 		orcc #$50
 		lds #$0100
 
-		lda #gamedp
+		lda #$ff
 		tfr a,dp
-		setdp gamedp
+		setdp $ff
+
+		ldd #$343c
+		sta reg_pia0_cra	; HS disabled
+		sta reg_pia1_cra	; printer FIRQ disabled
+		stb reg_pia1_crb	; CART FIRQ disabled
+		inca
+		sta reg_pia0_crb	; FS enabled hi->lo
+
+		; SAM MPU rate = slow
+		sta reg_sam_r1c
+		sta reg_sam_r0c
 
 		; SAM display offset = $0200
 		sta reg_sam_f0s
@@ -3914,6 +4016,30 @@ init_reset
 		sta reg_sam_v0c
 		sta reg_sam_v1s
 		sta reg_sam_v2s
+
+		; NTSC detection
+		clr vs_want_ntsc
+		ldx #0
+		lda reg_pia0_pdrb	; clear outstanding IRQ
+		sync			; wait for FS hi->lo
+		lda reg_pia0_pdrb	; clear outstanding IRQ
+10		lda reg_pia0_crb	; 4 - test for IRQ
+		bmi 20F			; 3
+		mul			; 11 - waste time...
+		mul			; 11
+		mul			; 11
+		leax ,x			; 4
+		leax <<0,x		; 5
+		leax 1,x		; 5 - inc line count
+		bra 10B			; 3 = 57 (cycles per scanline)
+20		cmpx #288		; PAL = 312, NTSC = 262
+		blo 30F
+		com vs_want_ntsc
+30
+
+		lda #gamedp
+		tfr a,dp
+		setdp gamedp
 
 		ldy #thanks
 		jsr write_screen

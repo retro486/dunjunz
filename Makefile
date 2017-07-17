@@ -101,7 +101,7 @@ CLEAN += play-screen-ntsc.s play-screen-ntsc.bin play-screen-ntsc.bin.dz
 CLEAN += ntsc-check.s ntsc-check.bin ntsc-check.bin.dz
 
 notefreq.s: ./gen_notefreq.pl Makefile
-	./gen_notefreq.pl -c 59 > $@
+	./gen_notefreq.pl -c 58 > $@
 
 CLEAN += notefreq.s
 
