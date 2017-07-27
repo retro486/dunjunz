@@ -1,3 +1,8 @@
+; Dunjunz - remade for the Dragon 32/64
+; Copyright (c) 2017 Ciaran Anscomb
+;
+; See COPYING file for redistribution conditions.
+
 ; Object tiles
 
 ; In general, the obj_tile field of an obj struct, but in many cases just

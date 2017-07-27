@@ -1,5 +1,9 @@
 #!/usr/bin/perl -wT
 
+# Copyright (c) 2017 Ciaran Anscomb
+#
+# See COPYING file for redistribution conditions.
+
 use Getopt::Long;
 
 my $cpu_freq = 14318180 / 16;

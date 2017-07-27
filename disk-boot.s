@@ -1,3 +1,16 @@
+; Dunjunz - remade for the Dragon 32/64
+; Copyright (c) 2017 Ciaran Anscomb
+;
+; See COPYING file for redistribution conditions.
+
+; Boot block, compatible with both Dragon and Tandy CoCo.  Copies a run of
+; tokenised BASIC into low RAM, sets up the requisite pointers for BASIC
+; to consider them as the next commands to execute, then returns to the
+; OS.
+;
+; DragonDOS loads this from Track 0, Sector 2.  RSDOS loads it from Track
+; 34, Sector 1.
+
 		org $2600
 		setdp 0		; assumed
 

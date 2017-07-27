@@ -1,3 +1,8 @@
+; Dunjunz - remade for the Dragon 32/64
+; Copyright (c) 2017 Ciaran Anscomb
+;
+; See COPYING file for redistribution conditions.
+
 ; Main game.  Assumes DUNJ2.BIN has already been run, and that DUNJUNZ.BAS
 ; has CLEARed space.
 

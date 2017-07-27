@@ -1,12 +1,7 @@
-; Dunjunz
-; Dragon version by Ciaran Anscomb <xroar@6809.org.uk>
-; BBC Micro/Master original by Julian Avis and Copyright Bug Byte 1987
-
-; This rewrite for the Dragon does not reference any original code, all
-; behaviour is inferred.
-
-; Level data was, however, converted from the BBC disk version using
-; information gleaned from David Boddie's Python scripts.
+; Dunjunz - remade for the Dragon 32/64
+; Copyright (c) 2017 Ciaran Anscomb
+;
+; See COPYING file for redistribution conditions.
 
 ; ========================================================================
 
@@ -24,12 +19,12 @@
 ; is a room ID plus vertical offset within the room.  The 'x' coordinate
 ; is just horizontal offset into the room.  Thus, 'y' ranges from -$80 to
 ; $3f, and 'x' ranges from 0 to 7.
-
+;
 ; Two simple bitmaps are maintained.  'bmp_wall' tracks where walls and
 ; doors are (anything that blocks player movement).  Doors are cleared
 ; within the bitmap when opened.  'bmp_objects' indicates where objects
 ; are, consulted both for pickups and undrawing.
-
+;
 ; In each bitmap, one byte represents all positions for one 'y'
 ; coordinate.  Most significant bit maps to leftmost position ('x' == 0).
 
@@ -305,6 +300,9 @@ scroll_stack	equ *
 scroll_tmp1	equ *+2
 scroll_ptr	equ *+3
 scroll_state	equ *+5
+scroll_speed	equ *+6
+scroll_sync	equ *+7
+scroll_char	equ *+8
 
 ; Player structs
 
@@ -363,10 +361,10 @@ BSS_start_	equ *
 ; sawtooth wave.  The result is ANDed, either with $FF (no change - still
 ; sawtooth), or $80 (square wave).  This is then shifted so that summing
 ; can't overflow.
-
+;
 ; The square wave ends up having half the amplitude of the sawtooth, but
 ; in terms of RMS it's not too far off.
-
+;
 ; Then envelope is applied, also using self-modifying code.  Two bytes are
 ; executed, generally either NOP or LSRA.  Two LSRA instructions would
 ; drop the amplitude of the channel to a quarter.
@@ -1339,9 +1337,10 @@ mod_skip_init	brn skip_init
 
 skip_init
 
-		ldd #$fe01
-		sta scroll_state
-		stb scroll_tmp1
+		clr scroll_state
+		lda #$01
+		sta scroll_tmp1
+		sta scroll_speed
 		ldd #scrolltext
 		std scroll_ptr
 		ldx #scrollbuf0
@@ -1374,27 +1373,40 @@ update_select_screen
 
 		jsr wait_keyheld
 
-10		lda reg_pia0_pdrb	; clear outstanding IRQ
-		sync			; wait for FS hi->lo
+10		ldb scroll_speed
+11		stb scroll_sync
+12		ldx #tbl_kdsp_menu
+		jsr test_keypress_jump
 		lda reg_pia0_pdrb	; clear outstanding IRQ
 		sync			; wait for FS hi->lo
+		dec scroll_sync
+		bne 12B
+
 		lda scroll_tmp1
 		sta tmp1
 		lda scroll_state
-		adda #2
-		cmpa #state_scroll_last
-		blo 20F
-		clra
-20		sta scroll_state
-		ldx #jtbl_scroll_state
-		jsr [a,x]
-		ldx #tbl_kdsp_menu
-		jsr test_keypress_jump
-		ldx scroll_ptr
-		cmpx #scrolltext_end
-		blo 10B
+		beq 13F
+		cmpa #6
+		bne 80F
+		; fetch next char on scroll_state == 0 or 6
+13		ldx scroll_ptr
+14		ldb ,x+
+		beq 20F
+		bpl 30F
+		negb
+		stb scroll_speed
+		bra 14B
+20		stx scroll_ptr
+		ldb #50
+		bra 11B
+30		cmpx #scrolltext_end
+		blo 40F
 		ldx #scrolltext
-		stx scroll_ptr
+40		stx scroll_ptr
+		stb scroll_char
+80		ldx #jtbl_scroll_state
+		jsr [a,x]
+
 		bra 10B
 
 toggle_p1	lda #$01
@@ -1423,16 +1435,14 @@ jtbl_scroll_state
 		CODE
 
 scroll0		bsr scroll_buf0
-		lda [scroll_ptr]
+		lda scroll_char
 		ldx #scrollbuf0+27+128
 		jsr write_char_x
 		inc scroll_tmp1
 		bra copy_buf0
 
 scroll1		bsr scroll_buf1
-		ldx scroll_ptr
-		lda ,x+
-		stx scroll_ptr
+		lda scroll_char
 		ldx #scrollbuf1+27+128
 		jsr write_char_x
 		inc scroll_tmp1
@@ -1442,23 +1452,23 @@ scroll2		bsr scroll_buf0
 		bra copy_buf0
 
 scroll3		bsr scroll_buf1
-		lda [scroll_ptr]
+		lda scroll_char
 		ldx #scrollbuf1+27+128
 		jsr write_char_x
 		inc scroll_tmp1
 		bra copy_buf1
 
 scroll4		bsr scroll_buf0
-		ldx scroll_ptr
-		lda ,x+
-		stx scroll_ptr
+		lda scroll_char
 		ldx #scrollbuf0+27+128
 		jsr write_char_x
 		inc scroll_tmp1
 		bra copy_buf0
 
 scroll5		bsr scroll_buf1
-		bra copy_buf1
+		bsr copy_buf1
+		clr scroll_state
+		rts
 
 scroll_buf0	ldu #scrollbuf0+3
 10		ldd 1,u
@@ -1497,6 +1507,9 @@ copy_buf	lda #6
 		dec tmp0
 		bne 10B
 		lds scroll_stack
+		lda scroll_state
+		adda #2
+		sta scroll_state
 		rts
 
 		DATA

@@ -66,13 +66,15 @@ dunjunz.sym
 ## tape output
 dunjunz.cas
 dunjunz.wav
+tape-stage2.bin
+tape-stage2.lis
+tape-stage2.cas
+tape-stage2.wav
 tape-part1.bin
 tape-part1.lis
-tape-part2.bin
-tape-part2.lis
-tape-part2.sym
-tape-part[12345].cas
-tape-part[12345].wav
+tape-part1.sym
+tape-part[123].cas
+tape-part[123].wav
 
 ## disk output
 disk-boot.bin

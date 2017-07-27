@@ -1,7 +1,14 @@
-# Dunjunz
+# Dunjunz - remade for the Dragon 32/64
+# Copyright (c) 2017 Ciaran Anscomb
+#
+# See COPYING file for redistribution conditions.
 
 .PHONY: all
 all: dunjunz.cas dunjunz.wav dunjunz.dsk
+
+PACKAGE = dunjunz
+VERSION = 1.0
+distdir = $(PACKAGE)-$(VERSION)
 
 ####
 
@@ -77,8 +84,8 @@ TEXT_INCLUDES = \
 
 CLEAN += $(TEXT_INCLUDES)
 
-scroll.bin: scroll.txt Makefile
-	perl -pe 'chomp if eof' $< | tr '123456()\!A-Z.,\- _' '\001-\050' > $@
+scroll.bin: scroll.txt
+	perl -pe 'chomp if eof' $< | tr '123456()\!A-Z.,\- _<>*' '\001-\050\376\377\000' > $@
 
 play-screen.s: play-screen.png ./tile2s
 	./tile2s -b -o $@ $<
@@ -115,16 +122,6 @@ dunjunz.bin: dunjunz.s dunj64.bin notefreq.s tiles.s fonts.s $(TEXT_INCLUDES) nt
 	$(ASM6809) -B -l dunjunz.lis -s dunjunz.sym -o $@ $<
 CLEAN += dunjunz.lis dunjunz.sym dunjunz.bin dunjunz.bin.dz
 
-# XXX won't really work now - tackle 64K
-dunjunz-coco.bin: dunjunz-wrap.s dunjunz.bin.dz
-	$(ASM6809) -C -e wrap_exec -l dunjunz-coco.lis -o $@ $<
-CLEAN += dunjunz-coco.bin
-
-# XXX won't really work now - tackle 64K
-dunjunz-dragon.bin: dunjunz-wrap.s dunjunz.bin.dz
-	$(ASM6809) -D -e wrap_exec -l dunjunz-dragon.lis -o $@ $<
-CLEAN += dunjunz-dragon.bin
-
 title.s: title.png ./tile2s
 	./tile2s -b -o $@ $<
 
@@ -157,48 +154,70 @@ press-key.bin: press-key.s
 
 CLEAN += press-key.s press-key.bin press-key.bin.dz
 
-TAPE_PARTS = tape-part1 \
+####
+
+# Tape image
+
+TAPE_PARTS = tape-stage2 \
+	tape-part1 \
 	tape-part2 \
-	tape-part4 \
-	tape-part5
+	tape-part3
 
 TAPE_PARTS_CAS = $(TAPE_PARTS:%=%.cas)
 TAPE_PARTS_WAV = $(TAPE_PARTS:%=%.wav)
 
-CLEAN += $(TAPE_PARTS_CAS) $(TAPE_PARTS_WAV)
+# Second stage loader for tape (bin2cas.pl generates the first stage).  dzip
+# doesn't save much for this (3 bytes at time of writing!), but it's required
+# so that dunzip code used later on is included in the first stage by
+# bin2cas.pl.
 
-tape-part1.bin: tape-part1.s dunjunz.bin.dz tape-part2.bin
-	$(ASM6809) -C -e start -l tape-part1.lis -o $@ $<
+tape-stage2.bin: tape-stage2.s dunjunz.bin.dz tape-part1.bin
+	$(ASM6809) -C -e start -l tape-stage2.lis -o $@ $<
 
-CLEAN += tape-part1.bin tape-part1.lis
+CLEAN += tape-stage2.bin tape-stage2.lis
 
-tape-part1.cas tape-part1.wav: tape-part1.bin
+tape-stage2.cas tape-stage2.wav: tape-stage2.bin
 	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ \
 		--eof-data --dzip --fast \
 		-C $<
 
-tape-part2.bin: tape-part2.s title.bin.dz copyright.bin.dz copyright64.bin.dz
-	$(ASM6809) -B -l tape-part2.lis -s tape-part2.sym -o $@ $<
+CLEAN += tape-stage2.cas tape-stage2.wav
 
-tape-part2.cas tape-part2.wav: tape-part2.bin
+# Part 1 contains the loading screen (separately, so it can be reused as the
+# title page on 64K machines) and copyright messages to be overlaid onto it.
+
+tape-part1.bin: tape-part1.s title.bin.dz copyright.bin.dz copyright64.bin.dz
+	$(ASM6809) -B -l tape-part1.lis -s tape-part1.sym -o $@ $<
+
+CLEAN += tape-part1.bin tape-part1.lis tape-part1.sym
+
+tape-part1.cas tape-part1.wav: tape-part1.bin
 	$(BIN2CAS) $(B2CFLAGS) -o $@ \
 		--fast --eof-data --no-filename \
 		-B $<
 
-#tape-part3.cas tape-part3.wav: copyright.bin.dz
-#	$(BIN2CAS) $(B2CFLAGS) -o $@ \
-#		--fast --eof-data --no-filename \
-#		-B $<
+CLEAN += tape-part1.cas tape-part1.wav
 
-tape-part4.cas tape-part4.wav: dunjunz.bin.dz
+# Part 2 is the main game.
+
+tape-part2.cas tape-part2.wav: dunjunz.bin.dz
 	$(BIN2CAS) $(B2CFLAGS) -o $@ \
 		--fast --eof-data --no-filename \
 		-B $<
 
-tape-part5.cas tape-part5.wav: dunj64.bin.dz
+CLEAN += tape-part2.cas tape-part2.wav
+
+# Part 3 is only loaded on 64K machines, and contains the code to display the
+# title graphics (contained in part 1), music data, and playback routine.
+
+tape-part3.cas tape-part3.wav: dunj64.bin.dz
 	$(BIN2CAS) $(B2CFLAGS) -o $@ \
 		--fast --eof-data --no-filename --pause \
 		-B $<
+
+CLEAN += tape-part3.cas tape-part3.wav
+
+# Rules to create the tape images.
 
 dunjunz.cas: $(TAPE_PARTS_CAS)
 	cat $(TAPE_PARTS_CAS) > $@
@@ -208,6 +227,10 @@ dunjunz.wav: $(TAPE_PARTS_WAV)
 
 CLEAN += dunjunz.cas dunjunz.wav
 
+####
+
+# Disk image
+
 DISK_PARTS = disk-boot.bin \
 	disk-part1-dragon.bas \
 	disk-part2-dragon.bin \
@@ -216,30 +239,43 @@ DISK_PARTS = disk-boot.bin \
 	disk-part2-coco.bin \
 	disk-part3-coco.bin
 
+# Boot block.  Same image is used for DragonDOS and RSDOS disks.
+
 disk-boot.bin: disk-boot.s
 	$(ASM6809) -B -l disk-boot.lis -o $@ $<
+
+# Part 1 is a BASIC loader that is simply transferred to the disk image.
+
+# Part 2 contains the title screen, copyright messages and the extra data for
+# 64K machines.  The extras will be thrown away on 32K machines, but that's ok:
+# disks are fast!
 
 disk-part2-dragon.bin: disk-part2.s title.bin.dz copyright.bin.dz copyright64.bin.dz dunj64.bin.dz
 	$(ASM6809) -D -e DUNJ2_exec -l disk-part2-dragon.lis -o $@ $<
 
 CLEAN += disk-part2-dragon.bin disk-part2-dragon.lis
 
-disk-part3-dragon.bin: disk-part3.s dunjunz.bin.dz
-	$(ASM6809) -D -e DUNJ3_exec -l disk-part3-dragon.lis -o $@ $<
-
-CLEAN += disk-part3-dragon.bin disk-part3-dragon.lis
-
 disk-part2-coco.bin: disk-part2.s title.bin.dz copyright.bin.dz copyright64.bin.dz dunj64.bin.dz
 	$(ASM6809) -C -e DUNJ2_exec -l disk-part2-coco.lis -o $@ $<
 
 CLEAN += disk-part2-coco.bin disk-part2-coco.lis
+
+# Part 3 contains the main game.
+
+disk-part3-dragon.bin: disk-part3.s dunjunz.bin.dz
+	$(ASM6809) -D -e DUNJ3_exec -l disk-part3-dragon.lis -o $@ $<
+
+CLEAN += disk-part3-dragon.bin disk-part3-dragon.lis
 
 disk-part3-coco.bin: disk-part3.s dunjunz.bin.dz
 	$(ASM6809) -C -e DUNJ3_exec -l disk-part3-coco.lis -o $@ $<
 
 CLEAN += disk-part3-coco.bin disk-part3-coco.lis
 
-#dunjunz.vdk: disk-part1-dragon.bin disk-part3-dragon.bin
+# Rules to create the disk image.
+
+# Sadly, I don't have tools to manipulate DragonDOS filesystems yet, so they
+# need to be copied on manually once the hybrid image is created.
 
 dunjunz.dsk: $(DISK_PARTS)
 	rm -f $@
@@ -257,9 +293,11 @@ CLEAN += dunjunz.dsk
 
 .PHONY: dist
 dist: $(EXTRA_DIST)
-	git archive --format=tar --output=../dunjunz.tar --prefix=dunjunz/ HEAD
-	#tar -r -f ../dunjunz.tar --owner=root --group=root --mtime=../dunjunz.tar --transform 's,^,dunjunz/,' $(EXTRA_DIST)
-	gzip -f9 ../dunjunz.tar
+	git archive --format=tar --output=./$(distdir).tar --prefix=$(distdir)/ HEAD
+	tar -r -f ./$(distdir).tar --owner=root --group=root --mtime=./$(distdir).tar --transform "s,^,$(distdir)/," $(EXTRA_DIST)
+	gzip -f9 ./$(distdir).tar
+
+CLEAN += $(distdir).tar $(distdir).tar.gz
 
 ####
 

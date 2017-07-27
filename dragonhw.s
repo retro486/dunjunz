@@ -1,3 +1,7 @@
+; Register definitions for Dragon hardware.
+;
+; This file is released to the public domain.
+
 ; PIA0
 reg_pia0_ddra		equ	$ff00
 reg_pia0_pdra		equ	$ff00

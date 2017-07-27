@@ -1,5 +1,10 @@
 #!/usr/bin/perl -wT
 
+# Dunjunz - remade for the Dragon 32/64
+# Copyright (c) 2017 Ciaran Anscomb
+#
+# See COPYING file for redistribution conditions.
+
 use strict;
 
 # Maximums:

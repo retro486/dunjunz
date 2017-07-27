@@ -1,7 +1,10 @@
-; Jenky
-; Ciaran Anscomb, 2017
+; Dunjunz - remade for the Dragon 32/64
+; Copyright (c) 2017 Ciaran Anscomb
+;
+; See COPYING file for redistribution conditions.
 
-; Simulate as much of a 76489 as needed to play a specific tune.
+; Mostly concerned with title music playback.  Simulates as much of a
+; 76489 as needed to play a specific tune.
 
 ; 3 channels
 ; 2 square waves, 1 pulse wave (from table)

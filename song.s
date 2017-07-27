@@ -1,4 +1,17 @@
-; song data
+; BBC Master Dunjunz song data
+;
+; Music composed by Julian Avis
+;
+; This "recording" obtained by modifying Beebem to dump sound register &
+; timing information.  Result broken into 960ms (usually) chunks and
+; analysed for repeats.
+;
+; The data is a little opaque, so frequency and timing annotations have
+; been included!
+
+; Song data.  Initial byte indicates duration in units of 10ms.  Followed
+; by three pairs of pointers, one per channel, indicating attentuation
+; pattern and frequency pattern to use.
 
 	fcb 97
 	fdb song_att_0,song_freq_0	; c0
@@ -1425,7 +1438,10 @@
 ; 62% reuse of attenuation patterns
 ; 23% reuse of frequency patterns
 
-; song patterns
+; Pattern data for attenuation and frequency.  Initial byte is delay to
+; first note (so any note previously playing in the channel continues).
+; Followed by (duration,data) pairs - data is 1 byte for attenuation, 3
+; bytes for frequency.
 
 song_att_0
 	fcb 1		; t = 0ms (initial)
