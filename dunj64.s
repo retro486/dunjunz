@@ -201,7 +201,17 @@ c3_f_next	equ *+1
 		inca
 		lbeq song_loop
 
-		puls dp,pc
+		lda #5
+		pshs a
+10		lsr psg_c1att
+		lsr psg_c2att
+		lsr psg_c3att
+		ldx #360
+		jsr psg_playfrag
+		dec ,s
+		bne 10B
+
+		puls a,dp,pc
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 

@@ -47,7 +47,7 @@ echo
 W=12
 H=6
 
-for i in {0..38}; do
+for i in {0..39}; do
 	x=$(((i%8)*W))
 	y=$(((i/8)*H))
 	bitmap_a "textfont_$i" $x $y -r

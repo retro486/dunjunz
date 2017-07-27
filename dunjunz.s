@@ -293,13 +293,18 @@ psg_c1pri	rmb 1
 psg_c2pri	rmb 1
 
 difficulty	rmb 1
-joystk_mode	rmb 1
 level		rmb 1
 
 anim_count	rmb 1
 
 p3_moved	rmb 1
 p4_moved	rmb 1
+
+; reuse player struct area for title screen variables
+scroll_stack	equ *
+scroll_tmp1	equ *+2
+scroll_ptr	equ *+3
+scroll_state	equ *+5
 
 ; Player structs
 
@@ -1328,15 +1333,24 @@ mod_show_title
 
 mod_skip_init	brn skip_init
 		clr difficulty
-		clr joystk_mode
 		lda #$0f
 		sta playing
 		dec mod_skip_init	; change to bra
 
 skip_init
 
+		ldd #$fe01
+		sta scroll_state
+		stb scroll_tmp1
+		ldd #scrolltext
+		std scroll_ptr
+		ldx #scrollbuf0
+10		clr ,x+
+		cmpx #scrollbuf1_end
+		blo 10B
+
 update_select_screen
-		ldx #fb0+24*fb_w+4*8*fb_w+128
+		ldx #fb0+18*fb_w+4*8*fb_w+128
 		stx tmp0
 
 		lda playing
@@ -1358,14 +1372,30 @@ update_select_screen
 		ldy #text_easy
 40		jsr write_continue
 
-		ldy #text_1
-		tst joystk_mode
-		beq 10F
-		ldy #text_2
-10		jsr write_continue
+		jsr wait_keyheld
 
+10		lda reg_pia0_pdrb	; clear outstanding IRQ
+		sync			; wait for FS hi->lo
+		lda reg_pia0_pdrb	; clear outstanding IRQ
+		sync			; wait for FS hi->lo
+		lda scroll_tmp1
+		sta tmp1
+		lda scroll_state
+		adda #2
+		cmpa #state_scroll_last
+		blo 20F
+		clra
+20		sta scroll_state
+		ldx #jtbl_scroll_state
+		jsr [a,x]
 		ldx #tbl_kdsp_menu
-		jmp wait_keypress_jump
+		jsr test_keypress_jump
+		ldx scroll_ptr
+		cmpx #scrolltext_end
+		blo 10B
+		ldx #scrolltext
+		stx scroll_ptr
+		bra 10B
 
 toggle_p1	lda #$01
 		bra 10F
@@ -1376,21 +1406,102 @@ toggle_p3	lda #$04
 toggle_p4	lda #$08
 10		eora playing
 		sta playing
-		bra update_select_screen
+		jmp update_select_screen
 toggle_skill	com difficulty
-		bra update_select_screen
-toggle_joystk	com joystk_mode
-		bra update_select_screen
-
-show_version	ldx #fb0+24*fb_w+128
-		stx tmp0
-		ldy #version
-		jsr write_continue
 		jmp update_select_screen
 
 		DATA
+jtbl_scroll_state
+		STATE_JTBL
+		fdb scroll0
+		fdb scroll1
+		fdb scroll2
+		fdb scroll3
+		fdb scroll4
+		fdb scroll5
+		STATE_ID "state_scroll_last"
+		CODE
+
+scroll0		bsr scroll_buf0
+		lda [scroll_ptr]
+		ldx #scrollbuf0+27+128
+		jsr write_char_x
+		inc scroll_tmp1
+		bra copy_buf0
+
+scroll1		bsr scroll_buf1
+		ldx scroll_ptr
+		lda ,x+
+		stx scroll_ptr
+		ldx #scrollbuf1+27+128
+		jsr write_char_x
+		inc scroll_tmp1
+		bra copy_buf1
+
+scroll2		bsr scroll_buf0
+		bra copy_buf0
+
+scroll3		bsr scroll_buf1
+		lda [scroll_ptr]
+		ldx #scrollbuf1+27+128
+		jsr write_char_x
+		inc scroll_tmp1
+		bra copy_buf1
+
+scroll4		bsr scroll_buf0
+		ldx scroll_ptr
+		lda ,x+
+		stx scroll_ptr
+		ldx #scrollbuf0+27+128
+		jsr write_char_x
+		inc scroll_tmp1
+		bra copy_buf0
+
+scroll5		bsr scroll_buf1
+		bra copy_buf1
+
+scroll_buf0	ldu #scrollbuf0+3
+10		ldd 1,u
+		std ,u++
+		cmpu #scrollbuf0_end-3
+		blo 10B
+		rts
+
+scroll_buf1	ldu #scrollbuf1+3
+10		ldd 1,u
+		std ,u++
+		cmpu #scrollbuf1_end-3
+		blo 10B
+		rts
+
+copy_buf1	ldu #scrollbuf1+4
+		bra copy_buf
+copy_buf0	ldu #scrollbuf0+4
+copy_buf	lda #6
+		sta tmp0
+		sts scroll_stack
+		lds #fb0+168*fb_w+4+6
+10		pulu d,x,y
+		pshs d,x,y
+		leas 12,s
+		pulu d,x,y
+		pshs d,x,y
+		leas 12,s
+		pulu d,x,y
+		pshs d,x,y
+		leas 12,s
+		pulu d,x,y
+		pshs d,x,y
+		leau 8,u
+		leas fb_w-12,s
+		dec tmp0
+		bne 10B
+		lds scroll_stack
+		rts
+
+		DATA
 select_screen	fcb 8
-		fdb fb0+24*fb_w+128
+		fdb fb0+18*fb_w+128
 		includebin "select-screen.bin"
 text_yes	fcb $8e,$22,$0e,$1c,$ff,0
 text_no		fcb $8e,$17,$18,$27,$ff,0
@@ -1398,7 +1509,8 @@ text_hard	fcb $ff,$8e,$11,$0a,$1b,$0d,0
 text_easy	fcb $ff,$8e,$0e,$0a,$1c,$22,0
 text_1		fcb $ff,$ff,$8e,$01,0
 text_2		fcb $ff,$ff,$8e,$02,0
-version		includebin "version.bin"
+scrolltext	includebin "scroll.bin"
+scrolltext_end
 		CODE
 
 		DATA
@@ -1408,8 +1520,6 @@ tbl_kdsp_menu	KEYDSP_ENTRY 7,5,start_game	; SPACE
 		KEYDSP_ENTRY 3,0,toggle_p3	; '3'
 		KEYDSP_ENTRY 4,0,toggle_p4	; '4'
 		KEYDSP_ENTRY 4,2,toggle_skill	; 'D'
-		KEYDSP_ENTRY 2,3,toggle_joystk	; 'J'
-		KEYDSP_ENTRY 6,6,show_version	; N/C
 		KEYDSP_ENTRY 2,6,game_reset	; BREAK
 		fdb 0
 		CODE
@@ -1418,7 +1528,7 @@ start_game
 
 		; must select some players
 		lda playing
-		beq update_select_screen
+		lbeq update_select_screen
 
 		lda difficulty
 		bne 5F
@@ -1440,14 +1550,6 @@ start_game
 		ldd #$0c80	; 12, 100-20(BCD)
 6		sta mod_drainer_hp
 		stb mod_drainer_dmg
-
-		lda joystk_mode
-		bne 5F
-		lda #$27	; beq
-		fcb $8c		; cmpx
-5		lda #$26	; bne
-		sta mod_joystk_p3
-		sta mod_joystk_p4
 
 		; flag all players as "dead" so they get reset
 		lda #$ff
@@ -1953,7 +2055,6 @@ plr_scan_controls
 		lda #1			; fire
 		sta plr_control,u
 10		ldb p3_moved
-mod_joystk_p3	equ *
 		beq 30F
 		bsr joy_yaxis
 		bcc 20F
@@ -1978,7 +2079,6 @@ mod_joystk_p3	equ *
 		lda #1			; fire
 		sta plr_control,u
 10		ldb p4_moved
-mod_joystk_p4	equ *
 		beq 30F
 		bsr joy_yaxis
 		bcc 20F
@@ -3601,11 +3701,7 @@ wait_keypress
 		; wait if key held
 10		bsr firebutton_pressed
 		bne 10B
-		clr reg_pia0_pdrb
-		lda reg_pia0_pdra
-		ora #$80
-		inca
-		bne 10B
+		bsr wait_keyheld
 		; wait until key pressed
 10		lda reg_pia0_pdra
 		ora #$80
@@ -3615,28 +3711,39 @@ wait_keypress
 		bne 10B
 		rts
 
-; For menus: scan table of KEYDSP_ENTRY and jump to handler
-
-wait_keypress_jump
+wait_keyheld
 		; wait if key held
 		clr reg_pia0_pdrb
 10		lda reg_pia0_pdra
 		ora #$80
 		inca
 		bne 10B
+		rts
+
+; For menus: scan table of KEYDSP_ENTRY and jump to handler
+
+wait_keypress_jump
+		bsr wait_keyheld
+10		bsr test_keypress_jump
+		bra 10B
+
+
+test_keypress_jump
 		; test firebutton before & after scan
 20		bsr firebutton_pressed
-		bne 20B
+		bne 40F
 		leau -2,x
 30		leau 4,u
 		ldd -2,u
-		beq 20B
+		beq 40F
 		sta reg_pia0_pdrb
 		bitb reg_pia0_pdra
 		bne 30B
 		bsr firebutton_pressed
-		bne 20B
+		bne 40F
+		leas 2,s
 		pulu pc
+40		rts
 
 firebutton_pressed
 		lda #$ff
@@ -3674,8 +3781,10 @@ write_continue
 10		lda ,y+
 		bne 15F
 		rts
-15		bpl write_char
-		inca
+15		bmi 16F
+		bsr write_char
+		bra 10B
+16		inca
 		beq 18F
 		anda #$7f
 		adda tmp1
@@ -3685,12 +3794,13 @@ write_continue
 mod_line_height	equ *+2
 		leax >0,x
 		bra 9B
+
 write_char	ldx #tbl_x_to_woff
 		ldb tmp1
 		ldb b,x
 		ldx tmp0
 		abx
-		deca
+write_char_x	deca
 		ldb #12
 		mul
 		tfr d,u
@@ -3698,12 +3808,12 @@ write_char	ldx #tbl_x_to_woff
 		lsrb
 		bcs 20F
 		leau textfont_a,u
-		DRAW_ROW_A -128
-		DRAW_ROW_A -96
-		DRAW_ROW_A -64
-		DRAW_ROW_A -32
-		DRAW_ROW_A 0
-		DRAW_LAST_ROW_A 32
+		DRAW_ROW_A_FAST -128
+		DRAW_ROW_A_FAST -96
+		DRAW_ROW_A_FAST -64
+		DRAW_ROW_A_FAST -32
+		DRAW_ROW_A_FAST 0
+		DRAW_LAST_ROW_A_FAST 32
 		bra 30F
 20		leau textfont_b,u
 		DRAW_ROW_B -128
@@ -3713,7 +3823,7 @@ write_char	ldx #tbl_x_to_woff
 		DRAW_ROW_B 0
 		DRAW_LAST_ROW_B 32
 30		inc tmp1
-		jmp 10B
+		rts
 
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -3933,6 +4043,13 @@ textfont_b	rzb textfont_a_end-textfont_a
 ; - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 		BSS
+
+; reuse this are for scrolltext buffers
+scrollbuf0	equ *
+scrollbuf0_end	equ scrollbuf0+fb_w*6
+scrollbuf1	equ scrollbuf0_end
+scrollbuf1_end	equ scrollbuf1+fb_w*6
+
 death_fifo	rmb 8
 finish_delay	rmb 1
 
@@ -4049,20 +4166,6 @@ init_reset
 		tfr a,dp
 		setdp gamedp
 
-		ldy #thanks
-		jsr write_screen
-		clr reg_pia0_pdrb
-5		lda reg_pia0_pdra
-		ora #$80
-		inca
-		bne 5B
-10		lda reg_pia0_pdra
-		ora #$80
-		inca
-		bne 20F
-		bra 10B
-20
-
 		lda $a000		; [$A000] points to ROM1 in CoCos
 		anda #$20
 		beq 10F			; Dragon - no patching necessary
@@ -4070,22 +4173,22 @@ init_reset
 		jsr apply_patches
 10
 
-		ldd $3ffe
-		pshs d
+		; test for 64K
 		sta reg_sam_tys
-		coma
-		comb
-		std $bffe
-		cmpd $3ffe
-		beq no_64k
-		cmpd $bffe
-		bne no_64k
+		lda $0062
+		ldb $8063
+		coma		; a != [$0062]
+		comb		; b != [$0063]
+		std $8062
+		cmpd $8062
+		bne no_64k	; didn't write
+		cmpd $0062
+		beq no_64k	; *did* shadow write
 		ldu #m64k_patches
 		jsr apply_patches
 		bra 10F
 no_64k		sta reg_sam_tyc
-10		puls d
-		std $3ffe
+10
 
 		ldy #video_select
 		jsr write_screen
@@ -4280,7 +4383,6 @@ coco_patches
 		KEYDSP_ENTRY 3,4,toggle_p3	; '3'
 		KEYDSP_ENTRY 4,4,toggle_p4	; '4'
 		KEYDSP_ENTRY 4,0,toggle_skill	; 'D'
-		KEYDSP_ENTRY 2,1,toggle_joystk	; 'J'
 		ENDPATCH
 
 		PATCH tbl_p1_keys
@@ -4389,9 +4491,6 @@ tbl_kdsp_ntsc	KEYDSP_ENTRY 0,6,ntsc_phase0	; ENTER
 		KEYDSP_ENTRY 1,6,ntsc_phase1	; CLEAR
 		fdb 0
 
-thanks		fcb 10
-		fdb fb0+6*fb_w+128+1
-		includebin "thanks.bin"
 video_select	fcb 10
 		fdb fb0+24*fb_w+128
 		includebin "video-select.bin"

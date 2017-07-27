@@ -12,8 +12,10 @@ flag_64k	equ $03ff
 
 		include "dragonhw.s"
 		include "dunjunz.sym"
+		include "tape-part2.sym"
 
 		org $0300
+		setdp 0		; assumed
 
 start
 
@@ -21,26 +23,30 @@ start
 		lds #$0300
 
 		; use different pages for $c000-$fdff on coco3
-		lda #$36
-		sta $ffa6
-		inca
-		sta $ffa7
+		ldd #$3637
+		std $ffa6
 
-		; load title dz
-		ldx #$1c00
+		; load part2
+		ldx #PART2_start
 		jsr [load_part_ptr]
-		pshs x
 
 		; test for 64K
 		clr flag_64k
 		sta reg_sam_tys
-		ldd #$6c93
-		std $bffe
-		cmpd $bffe
-		bne dunzip_title
-		cmpd $3ffe
-		beq dunzip_title
+		lda $0062
+		ldb $8063
+		coma		; a != [$0062]
+		comb		; b != [$8063]
+		std $8062
+		cmpd $8062
+		bne no_64k	; didn't write
+		cmpd $0062
+		beq no_64k	; *did* shadow write
 		com flag_64k
+no_64k
+
+		lda flag_64k
+		beq dunzip_title
 
 		; copy low ram vars to $8000+
 		ldx #$0000
@@ -50,12 +56,12 @@ start
 		cmpx #$0500
 		blo 10B
 
-		; copy title dz to $8500+
-		ldx #$1c00
+		; copy title & copyright64 dz to $8500+
+		ldx #PART2_title_dz
 		;ldu #$8500
 10		lda ,x+
 		sta ,u+
-		cmpx ,s
+		cmpx #PART2_copyright64_dz_end
 		blo 10B
 
 dunzip_title
@@ -74,42 +80,47 @@ dunzip_title
 		sta reg_pia1_ddrb
 
 		; dunzip title
-		puls d
-		;ldx #$1c00
+		ldx #PART2_title_dz
+		ldd #PART2_title_dz_end
 		ldu #$0400+6*32
 		jsr [dunzip_ptr]
 
-		; load copyright dz
-		ldx #$1c00
-		jsr [load_part_ptr]
 		; dunzip copyright
-		tfr x,d
-		ldx #$1c00
+		ldx #PART2_copyright_dz
+		ldd #PART2_copyright_dz_end
 		ldu #$0400+159*32
 		jsr [dunzip_ptr]
 
 		; load game dz
-		ldx #$3900
+		ldx #$3700
 		jsr [load_part_ptr]
 		pshs x
 
-		tst flag_64k
+		lda flag_64k
 		beq 20F
+
+		; tidy up where flasher was
+		lda #$aa
+		sta $0400
+		; dunzip copyright64
+		sta reg_sam_tys
+		ldx #$8500+PART2_copyright64_dz-PART2_start
+		ldd #$8500+PART2_copyright64_dz_end-PART2_start
+		ldu #$0400+159*32+11*32
+		jsr [dunzip_ptr]
+		sta reg_sam_tyc
 
 		; load music dz in page#1
 		sta reg_sam_p1s
-		lda #$36
-		sta $ffa2
-		inca
-		sta $ffa3
+		ldd #$3637
+		std $ffa2
 		ldx #$4000		; $c000, mapped lower
 		jsr [load_part_ptr]
 		sta reg_sam_p1c
-		lda #$3a
-		sta $ffa2
-		inca
-		sta $ffa3
+		ldd #$3a3b
+		std $ffa2
 		sta reg_sam_tys
+
 		; dunzip music dz to $9500+
 		tfr x,d
 		ora #$80
@@ -120,7 +131,7 @@ dunzip_title
 
 		; dunzip game
 20		puls d
-		ldx #$3900
+		ldx #$3700
 		ldu #CODE_start
 		jsr [dunzip_ptr]
 		jmp INIT_exec

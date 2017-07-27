@@ -1,15 +1,19 @@
-; Wraps up a dzipped version of Dunjunz.  Used to create disk files so
-; they benefit from compression too.
+; Main game.  Assumes DUNJ2.BIN has already been run, and that DUNJUNZ.BAS
+; has CLEARed space.
 
 		include "dunjunz.sym"
 
-		org $7f00-sizeof_wrap
+; Position at end of RAM.  Really should be INIT_end + number of dunzip
+; overflow bytes + dunzip loop bytes, but no way of determining that right
+; now.
 
-wrap_start
+		org $8000-sizeof_DUNJ3
 
-dunjunz_dz	includebin "dunjunz.raw.dz"
+DUNJ3_start
 
-wrap_exec
+dunjunz_dz	includebin "dunjunz.bin.dz"
+
+DUNJ3_exec
 
 		orcc #$50
 
@@ -42,5 +46,5 @@ dunz_run	stb ,u+
 
 		jmp INIT_exec
 
-wrap_end
-sizeof_wrap	equ *-wrap_start
+DUNJ3_end
+sizeof_DUNJ3	equ *-DUNJ3_start
