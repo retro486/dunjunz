@@ -11,8 +11,8 @@ For downloads, check out the [home page](http://www.6809.org.uk/dunjunz/).
 
 ## Building from source
 
-The build system very much depends on a Unix-like environment, and depends on
-many commonly-available Unix tools and library.  You'll need a C compiler, the
+The build system very much depends on a Unix-like environment, and on many
+commonly-available Unix tools and libraries.  You'll need a C compiler, the
 [SDL\_image 1.2] development files, Perl, [asm6809], [bin2cas.pl], and [dzip].
 
 Building the tape images requires [SoX].  Building the disk image requires the
