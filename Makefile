@@ -176,13 +176,6 @@ tape-stage2.bin: tape-stage2.s dunjunz.bin.dz tape-part1.bin
 
 CLEAN += tape-stage2.bin tape-stage2.lis
 
-tape-stage2.cas tape-stage2.wav: tape-stage2.bin
-	$(BIN2CAS) $(B2CFLAGS) --autorun -o $@ -n DUNJUNZ \
-		--eof-data --dzip --fast \
-		-C $<
-
-CLEAN += tape-stage2.cas tape-stage2.wav
-
 # Part 1 contains the loading screen (separately, so it can be reused as the
 # title page on 64K machines) and copyright messages to be overlaid onto it.
 
@@ -191,39 +184,20 @@ tape-part1.bin: tape-part1.s title.bin.dz copyright.bin.dz copyright64.bin.dz
 
 CLEAN += tape-part1.bin tape-part1.lis tape-part1.sym
 
-tape-part1.cas tape-part1.wav: tape-part1.bin
-	$(BIN2CAS) $(B2CFLAGS) -o $@ \
-		--fast --eof-data --no-filename \
-		-B $<
-
-CLEAN += tape-part1.cas tape-part1.wav
-
 # Part 2 is the main game.
-
-tape-part2.cas tape-part2.wav: dunjunz.bin.dz
-	$(BIN2CAS) $(B2CFLAGS) -o $@ \
-		--fast --eof-data --no-filename \
-		-B $<
-
-CLEAN += tape-part2.cas tape-part2.wav
 
 # Part 3 is only loaded on 64K machines, and contains the code to display the
 # title graphics (contained in part 1), music data, and playback routine.
 
-tape-part3.cas tape-part3.wav: dunj64.bin.dz
-	$(BIN2CAS) $(B2CFLAGS) -o $@ \
-		--fast --eof-data --no-filename --pause \
-		-B $<
-
-CLEAN += tape-part3.cas tape-part3.wav
-
 # Rules to create the tape images.
 
-dunjunz.cas: $(TAPE_PARTS_CAS)
-	cat $(TAPE_PARTS_CAS) > $@
-
-dunjunz.wav: $(TAPE_PARTS_WAV)
-	sox $(TAPE_PARTS_WAV) $@
+dunjunz.cas dunjunz.wav: tape-stage2.bin tape-part1.bin dunjunz.bin.dz dunj64.bin.dz
+	$(BIN2CAS) $(B2CFLAGS) --autorun --eof-data --fast -o $@ -n DUNJUNZ \
+		-C --dzip tape-stage2.bin \
+		--omit --no-dzip \
+		-B tape-part1.bin \
+		-B dunjunz.bin.dz \
+		-B dunj64.bin.dz
 
 CLEAN += dunjunz.cas dunjunz.wav
 
